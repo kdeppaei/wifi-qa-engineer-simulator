@@ -20,7 +20,7 @@ test('offline Excel tool exports independent BF curves, gaps, zeros and source c
   await page.locator('#off').fill('dB\tMbps\n0\t930\n7.5\t880\n25\t20\n30\t0');
   await expect(page.locator('.status')).toContainText('1 個空白值');
   await expect(page.getByRole('img')).toBeVisible();
-  await expect(page.locator('tbody tr')).toHaveCount(2);
+  await expect(page.locator('.comparison tbody tr')).toHaveCount(2);
   await page.locator('#source').selectOption('MSP 實機量測（使用者標示）');
   await page.locator('#note').fill('5 GHz DL <test> & TCP');
   const event = page.waitForEvent('download');
@@ -80,8 +80,8 @@ test('common BF data and narrow screens show explicit demo provenance without ov
   await expect(page.locator('#data')).toHaveValue('');
   await page.getByRole('button', { name: 'TxBF ON／OFF · 三欄' }).click();
   await expect(page.locator('#source')).toHaveValue('示範數據（非實機量測）');
-  await expect(page.locator('tbody tr')).toHaveCount(6);
-  await expect(page.locator('tbody tr').last()).toContainText('—');
+  await expect(page.locator('.comparison tbody tr')).toHaveCount(6);
+  await expect(page.locator('.comparison tbody tr').last()).toContainText('—');
   await page.screenshot({ path: info.outputPath('rvr-excel-demo.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
@@ -89,4 +89,42 @@ test('common BF data and narrow screens show explicit demo provenance without ov
   );
   await page.getByRole('button', { name: '清空全部' }).click();
   await expect(page.getByRole('button', { name: '下載 Excel 原生圖表 .xlsx' })).toBeDisabled();
+});
+
+test('matrix paste uses left columns, allows mapping and exports renamed native axes', async ({
+  page,
+}, info) => {
+  await page.goto('/rvr-excel.html');
+  await page
+    .locator('#data')
+    .fill(
+      'MSP report\nLoss\tRate\tMCS\tNSS\n0\t980\t11\t2\n10\t900\t10\t2\n90\t0\t0\t1\n\nSecond run\n0\t500\t7\t1',
+    );
+  await expect(page.locator('.selection-info')).toContainText('第 3 行');
+  await expect(page.locator('.selection-info')).toContainText('第 1、2 欄');
+  await expect(page.locator('.selection-info')).toContainText('2 欄不納入');
+  await expect(page.locator('#x-label')).toHaveValue('dB');
+  await expect(page.locator('#y-label')).toHaveValue('Throughput (Mbps)');
+  await page.locator('#x-label').fill('RF loss (dB)');
+  await page.locator('#y-label').fill('Measured rate (Mbps)');
+  await expect(page.getByRole('img')).toHaveAttribute(
+    'aria-label',
+    'RvR 曲線：X 軸 RF loss (dB)，Y 軸 Measured rate (Mbps)',
+  );
+  const event = page.waitForEvent('download');
+  await page.getByRole('button', { name: '下載 Excel 原生圖表 .xlsx' }).click();
+  const file = info.outputPath('matrix-renamed.xlsx');
+  await (await event).saveAs(file);
+  const files = unzipSync(readFileSync(file));
+  const sheet = strFromU8(files['xl/worksheets/sheet1.xml']);
+  expect(sheet).not.toContain('<x:pane');
+  expect(sheet).toContain('showGridLines="1"');
+  expect(sheet).toContain('RF loss (dB)');
+  expect(strFromU8(files['xl/drawings/charts/chart1.xml'])).toContain('Measured rate (Mbps)');
+  await page.locator('#data').fill('Rate\tLoss\tOther\n980\t0\t11\n900\t10\t10\n0\t90\t0');
+  await page.locator('.mapping summary').click();
+  await page.getByLabel('第 1 欄位置', { exact: true }).fill('2');
+  await page.getByLabel('第 2 欄位置', { exact: true }).fill('1');
+  await expect(page.locator('.selection-info')).toContainText('第 2、1 欄');
+  await page.screenshot({ path: info.outputPath('matrix-mapping-preview.png'), fullPage: true });
 });

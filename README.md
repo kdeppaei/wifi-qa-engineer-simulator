@@ -8,7 +8,7 @@
 
 本專案目前維護兩項工具：[兩項工作的範圍與狀態](docs/tasks.md)。
 
-新增獨立的 **RvR Excel 繪圖工具 v1.0**：支援貼上 dB／Mbps、TxBF ON／OFF 比較、即時曲線、原生 Excel 圖表下載。開發模式開啟 `/rvr-excel.html`；`pnpm build` 另產生可直接離線開啟的 `dist/rvr-excel-tool.html`。[操作說明](docs/rvr-excel-guide.md)及[可直接在 Excel 貼入資料的範本](docs/rvr-excel-template.xlsx)。
+獨立的 **RvR Excel 繪圖工具 v1.1**：可直接貼 MSP 矩陣、擷取左上方數據，支援自訂欄名與擷取行／欄、TxBF ON／OFF 比較、即時曲線、原生 Excel 圖表下載。新版 Excel 取消凍結窗格並顯示格線，修正圖表跨凍結分界的捲動切割。圖片 OCR 尚未加入。開發模式開啟 `/rvr-excel.html`；`pnpm build` 另產生可直接離線開啟的 `dist/rvr-excel-tool.html`。[操作說明](docs/rvr-excel-guide.md)及[可直接在 Excel 貼入資料的範本](docs/rvr-excel-template.xlsx)。
 
 [RvR Excel 工具驗證紀錄](docs/rvr-excel-validation.md)
 

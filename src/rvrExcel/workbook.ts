@@ -26,7 +26,12 @@ function replaceCell(sheet: string, address: string, value: string | number | nu
 function cache(points: Point[], x: boolean) {
   return `<c:numCache><c:formatCode>0.##</c:formatCode><c:ptCount val="1000"/>${points.flatMap((p, i) => ((x ? p.db : p.mbps) === null ? [] : [`<c:pt idx="${i}"><c:v>${x ? p.db : p.mbps}</c:v></c:pt>`])).join('')}</c:numCache>`;
 }
-export function makeWorkbook(series: Point[][], source: string, note: string): Uint8Array {
+export function makeWorkbook(
+  series: Point[][],
+  source: string,
+  note: string,
+  labels = { xLabel: 'dB', yLabel: 'Throughput (Mbps)' },
+): Uint8Array {
   if (series.length < 1 || series.length > 2 || series.some((p) => p.length > 1000))
     throw new Error('資料組數或測點數不正確。');
   const bytes = Uint8Array.from(atob(templateBase64), (c) => c.charCodeAt(0));
@@ -43,6 +48,12 @@ export function makeWorkbook(series: Point[][], source: string, note: string): U
       ]
     : [['A', 'B']];
   for (const [i, points] of series.entries()) {
+    sheet = replaceCell(sheet, `${specs[i][0]}6`, labels.xLabel);
+    sheet = replaceCell(
+      sheet,
+      `${specs[i][1]}6`,
+      `${compare ? (i === 0 ? 'TxBF ON ' : 'TxBF OFF ') : ''}${labels.yLabel}`,
+    );
     for (const [j, p] of points.entries()) {
       sheet = replaceCell(sheet, `${specs[i][0]}${j + 7}`, p.db);
       sheet = replaceCell(sheet, `${specs[i][1]}${j + 7}`, p.mbps);
@@ -62,11 +73,25 @@ export function makeWorkbook(series: Point[][], source: string, note: string): U
   );
   const chartPath = `xl/drawings/charts/chart${number}.xml`;
   let chart = strFromU8(files[chartPath]);
+  chart = chart.replace(/<c:valAx>[\s\S]*?<\/c:valAx>/g, (axis) =>
+    axis.replace(
+      /(<c:title>[\s\S]*?<a:t>)[\s\S]*?(<\/a:t>)/,
+      (_m, before: string, after: string) =>
+        before + xml(/<c:axPos val="b"/.test(axis) ? labels.xLabel : labels.yLabel) + after,
+    ),
+  );
   let index = 0;
   chart = chart.replace(/<c:ser>[\s\S]*?<\/c:ser>/g, (ser) => {
     const [x, y] = specs[index];
     const points = series[index++];
-    return ser
+    return (
+      compare
+        ? ser
+        : ser.replace(
+            /(<c:tx><c:v>)[\s\S]*?(<\/c:v>)/,
+            (_m, before: string, after: string) => before + xml(labels.yLabel) + after,
+          )
+    )
       .replace(
         /<c:xVal>[\s\S]*?<\/c:xVal>/,
         `<c:xVal><c:numRef><c:f>'${name}'!$${x}$7:$${x}$1006</c:f>${cache(points, true)}</c:numRef></c:xVal>`,

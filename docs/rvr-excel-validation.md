@@ -1,4 +1,16 @@
-# RvR Excel 工具 v1.0 驗證紀錄
+# RvR Excel 工具驗證紀錄
+
+## v1.1（2026-10-10）
+
+新增 MSP 矩陣位置擷取、起始行與欄號修改、自訂 X／Y 欄名與原生 Excel 軸名。保留首組連續數據，明確顯示右側未選取欄位與下方未匯入行數。圖片 OCR 尚未加入。
+
+127 個單元測試通過，含 28 個 RvR 資料／匯出測試；正式建置、TypeScript 和 ESLint 通過。原模擬器 16 個瀏覽器測試保留，新工具驗證離線下載、來源、矩陣擷取、欄名與數值軸、手動欄號、手機排版。
+
+使用者回報的 Excel 檔凍結前 6 行，圖表從第 6 行開始；原生 XML 的 pane 為 `ySplit=6`、drawing 起點 row=5（從 0 計數），使圖表跨越凍結分界。以 Artifact Tool 編輯視窗設定，取消凍結並顯示格線。最終檔案僅替換兩個工作表的 sheetViews，其他所有 ZIP 內容、儲存格數值／樣式、原生圖表與快取均保持原樣。原始 Downloads 檔案未覆寫。
+
+已渲染、檢查修正前後兩個工作表與空白範本，並以 Windows Excel 開啟修正版：FreezePanes=False、SplitRow=0、SplitColumn=0、DisplayGridlines=True。ScrollRow 依序為 1、13、50、1，圖表始終保持約 712.8 × 486 pt，ChartType=74；原始 ON 起點 980 Mbps 與 OFF 的空白測值保留。此輪僅驗證開啟與捲動，未依賴 Office 另存功能，也沒有測量 Excel 螢幕像素渲染。
+
+## v1.0（2026-10-09）
 
 驗證日期：2026-10-09。原模擬器維持 v0.3.1，新增獨立 RvR Excel 工具 v1.0。
 

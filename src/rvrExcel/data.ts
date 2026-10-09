@@ -8,6 +8,111 @@ export interface Parsed {
   reordered: boolean;
 }
 export const MAX_POINTS = 1000;
+export interface MatrixOptions {
+  startRow?: number;
+  columns?: (number | undefined)[];
+}
+export interface MatrixParsed extends Parsed {
+  startRow: number;
+  columns: number[];
+  ignoredColumns: number;
+  skippedTopRows: number;
+  remainingRows: number;
+}
+const numeric = (text: string) =>
+  /^[+]?\d*(?:\.\d*)?(?:[eE][+-]?\d+)?$/.test(text) &&
+  text !== '' &&
+  Number.isFinite(Number(text)) &&
+  Number(text) >= 0;
+
+export function parseMatrix(
+  text: string,
+  count: 2 | 3,
+  sort = true,
+  options: MatrixOptions = {},
+): MatrixParsed {
+  const raw = text.replace(/^\uFEFF/, '').split(/\r?\n/);
+  const rows = raw.map((line, index) => {
+    try {
+      return line.trim() ? splitRow(line) : [];
+    } catch (error) {
+      throw new Error(`第 ${index + 1} 行：${(error as Error).message}`, { cause: error });
+    }
+  });
+  if (
+    options.startRow !== undefined &&
+    (!Number.isInteger(options.startRow) || options.startRow < 1 || options.startRow > rows.length)
+  )
+    throw new Error('起始行必須是資料範圍內的正整數。');
+  for (const n of options.columns ?? [])
+    if (n !== undefined && (!Number.isInteger(n) || n < 1 || n > 256))
+      throw new Error('欄位必須是 1 至 256 的正整數。');
+  let start = options.startRow === undefined ? -1 : options.startRow - 1;
+  let columns: number[] = [];
+  for (let r = start < 0 ? 0 : start; r < rows.length; r++) {
+    const left = Math.max(
+      0,
+      rows[r].findIndex((c) => c !== ''),
+    );
+    const x = options.columns?.[0] === undefined ? left : options.columns[0] - 1;
+    const candidate = Array.from({ length: count }, (_, i) =>
+      options.columns?.[i] === undefined ? x + i : options.columns[i]! - 1,
+    );
+    if (new Set(candidate).size !== count) throw new Error('每個資料欄位必須選擇不同欄。');
+    if (
+      start >= 0 ||
+      (numeric(rows[r][x] ?? '') && candidate.slice(1).every((c) => c < rows[r].length))
+    ) {
+      start = r;
+      columns = candidate;
+      break;
+    }
+  }
+  if (start < 0 || !columns.length)
+    throw new Error('找不到左上方的數值區塊。請確認左欄 dB、右欄 Throughput，或指定起始行與欄位。');
+  const selected: string[] = [];
+  const seenDb = new Set<number>();
+  let ignoredColumns = 0;
+  let end = start;
+  for (let r = start; r < rows.length; r++) {
+    const cells = rows[r];
+    const chosen = columns.map((c) => cells[c] ?? '');
+    if (chosen.every((c) => c === '')) break;
+    if (
+      r > start &&
+      (/^(average|mean|summary|total|end|平均|統計|合計|結束)(?:\s|$|:)/i.test(chosen[0]) ||
+        chosen.every((c) => /^[^\d+-.]/.test(c) && !numeric(c)))
+    )
+      break;
+    if (columns.some((c) => c >= cells.length))
+      throw new Error(
+        `第 ${r + 1} 行：指定的第 ${Math.max(...columns) + 1} 欄不存在。空白測值請保留 Tab 或逗號。`,
+      );
+    // Header rows were skipped above. Within this block, keep validation errors
+    // tied to original matrix row numbers instead of silently omitting samples.
+    for (let i = 0; i < count; i++)
+      if (!(i > 0 && chosen[i] === '') && !numeric(chosen[i]))
+        throw new Error(`第 ${r + 1} 行、第 ${columns[i] + 1} 欄：必須是非負數字。`);
+    const db = Number(chosen[0]);
+    if (seenDb.has(db))
+      throw new Error(
+        `第 ${r + 1} 行、第 ${columns[0] + 1} 欄：${db} dB 重複。請選擇同一輪測試或先處理重測值。`,
+      );
+    seenDb.add(db);
+    selected.push(chosen.join('\t'));
+    ignoredColumns = Math.max(ignoredColumns, cells.length - count);
+    end = r + 1;
+  }
+  const parsed = parseData(selected.join('\n'), count, sort);
+  return {
+    ...parsed,
+    startRow: start + 1,
+    columns: columns.map((c) => c + 1),
+    ignoredColumns,
+    skippedTopRows: start,
+    remainingRows: raw.slice(end).filter((line) => line.trim()).length,
+  };
+}
 
 // Excel clipboard is TSV. CSV accepts quoted fields; whitespace is supported
 // only when there are no explicit separators, so empty TSV cells stay empty.

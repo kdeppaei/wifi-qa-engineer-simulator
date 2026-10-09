@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { matchedComparison, parseData } from './data';
-import type { Point } from './data';
+import { matchedComparison, parseMatrix } from './data';
+import type { Point, MatrixOptions } from './data';
 import { makeWorkbook } from './workbook';
 import './style.css';
 
@@ -10,11 +10,90 @@ const defaultMetadata = () =>
   Object.fromEntries(
     ['single', 'common', 'separate'].map((mode) => [
       mode,
-      { source: '使用者提供數據（未驗證量測來源）', note: '' },
+      {
+        source: '使用者提供數據（未驗證量測來源）',
+        note: '',
+        xLabel: 'dB',
+        yLabel: 'Throughput (Mbps)',
+      },
     ]),
-  ) as Record<Mode, { source: string; note: string }>;
+  ) as Record<Mode, { source: string; note: string; xLabel: string; yLabel: string }>;
 const colors = ['#2563eb', '#dc2626'];
-function Chart({ series, labels }: { series: Point[][]; labels: string[] }) {
+function Mapping({
+  value,
+  onChange,
+  count,
+  prefix,
+  xName,
+  yName,
+}: {
+  value: MatrixOptions;
+  onChange: (v: MatrixOptions) => void;
+  count: 2 | 3;
+  prefix: string;
+  xName: string;
+  yName: string;
+}) {
+  return (
+    <details className="mapping">
+      <summary>修改擷取範圍（預設找左上方第一組數據）</summary>
+      <div className="mapping-grid">
+        <label>
+          資料起始行
+          <input
+            aria-label={`${prefix}起始行`}
+            type="number"
+            min="1"
+            value={value.startRow ?? ''}
+            placeholder="自動"
+            onChange={(e) =>
+              onChange({
+                ...value,
+                startRow: e.target.value === '' ? undefined : Number(e.target.value),
+              })
+            }
+          />
+        </label>
+        {Array.from({ length: count }, (_, i) => (
+          <label key={i}>
+            {i === 0
+              ? `X 欄（${xName}）`
+              : count === 3
+                ? `${i === 1 ? 'ON' : 'OFF'} Y 欄`
+                : `Y 欄（${yName}）`}
+            <input
+              aria-label={`${prefix}第 ${i + 1} 欄位置`}
+              type="number"
+              min="1"
+              max="256"
+              value={value.columns?.[i] ?? ''}
+              placeholder={i === 0 ? '自動最左欄' : `自動第 ${i + 1} 欄`}
+              onChange={(e) => {
+                const columns = [...(value.columns ?? [])];
+                columns[i] = e.target.value === '' ? undefined : Number(e.target.value);
+                onChange({ ...value, columns });
+              }}
+            />
+          </label>
+        ))}
+      </div>
+      <button className="secondary" onClick={() => onChange({})}>
+        恢復自動擷取
+      </button>
+    </details>
+  );
+}
+function Chart({
+  series,
+  labels,
+  xLabel,
+  yLabel,
+}: {
+  series: Point[][];
+  labels: string[];
+  xLabel: string;
+  yLabel: string;
+}) {
   const all = series.flat();
   const maxX = Math.max(10, ...all.map((p) => p.db));
   const maxY = Math.max(10, ...all.map((p) => p.mbps ?? 0)) * 1.1;
@@ -22,7 +101,7 @@ function Chart({ series, labels }: { series: Point[][]; labels: string[] }) {
   const y = (v: number) => 352 - (v / maxY) * 294;
   const fmt = (n: number) => Number(n.toFixed(2)).toLocaleString('en-US');
   return (
-    <svg viewBox="0 0 760 430" role="img" aria-label="RvR 曲線：X 軸 dB，Y 軸 Mbps">
+    <svg viewBox="0 0 760 430" role="img" aria-label={`RvR 曲線：X 軸 ${xLabel}，Y 軸 ${yLabel}`}>
       {[0, 1, 2, 3, 4, 5].map((i) => (
         <g key={i}>
           <line x1="78" x2="704" y1={y((maxY * i) / 5)} y2={y((maxY * i) / 5)} stroke="#e1e7ef" />
@@ -36,10 +115,10 @@ function Chart({ series, labels }: { series: Point[][]; labels: string[] }) {
       ))}
       <line x1="78" y1="352" x2="704" y2="352" stroke="#8a98ac" />
       <text x="385" y="413" textAnchor="middle">
-        衰減 Attenuation (dB)
+        {xLabel}
       </text>
       <text transform="translate(20 215) rotate(-90)" textAnchor="middle">
-        吞吐量 Throughput (Mbps)
+        {yLabel}
       </text>
       {series.map((points, s) => {
         let pen = false;
@@ -61,7 +140,7 @@ function Chart({ series, labels }: { series: Point[][]; labels: string[] }) {
               p.mbps === null ? null : (
                 <circle key={i} cx={x(p.db)} cy={y(p.mbps)} r="3.3" fill={colors[s]}>
                   <title>
-                    {labels[s]}: {p.db} dB / {p.mbps} Mbps
+                    {labels[s]}: {p.db} {xLabel} / {p.mbps} {yLabel}
                   </title>
                 </circle>
               ),
@@ -95,7 +174,14 @@ function App() {
   const [off, setOff] = useState('');
   const [sort, setSort] = useState(true);
   const [metadata, setMetadata] = useState(defaultMetadata);
-  const { source, note } = metadata[mode];
+  const { source, note, xLabel, yLabel } = metadata[mode];
+  const [mapping, setMapping] = useState<Record<string, MatrixOptions>>({
+    single: {},
+    common: {},
+    on: {},
+    off: {},
+  });
+  const mappingKey = mode === 'separate' ? 'on' : mode;
   const setSource = (source: string) =>
     setMetadata((previous) => ({ ...previous, [mode]: { ...previous[mode], source } }));
   const setNote = (note: string) =>
@@ -107,22 +193,23 @@ function App() {
   const result = useMemo(() => {
     if (!text.trim() && (mode !== 'separate' || !off.trim())) return { status: 'empty' as const };
     try {
-      const parsed = parseData(text, mode === 'common' ? 3 : 2, sort);
+      const parsed = parseMatrix(text, mode === 'common' ? 3 : 2, sort, mapping[mappingKey]);
       if (mode === 'separate') {
-        const other = parseData(off, 2, sort);
+        const other = parseMatrix(off, 2, sort, mapping.off);
         return {
           status: 'ready' as const,
           series: [parsed.series[0], other.series[0]],
           missing: parsed.missing + other.missing,
           reordered: parsed.reordered || other.reordered,
+          selections: [parsed, other],
         };
       }
-      return { status: 'ready' as const, ...parsed };
+      return { status: 'ready' as const, ...parsed, selections: [parsed] };
     } catch (error) {
       return { status: 'error' as const, error: (error as Error).message };
     }
-  }, [text, off, mode, sort]);
-  const labels = mode === 'single' ? ['Throughput'] : ['TxBF ON', 'TxBF OFF'];
+  }, [text, off, mode, sort, mapping, mappingKey]);
+  const labels = mode === 'single' ? [yLabel] : ['TxBF ON', 'TxBF OFF'];
   const comparison =
     result.status === 'ready' && mode !== 'single'
       ? matchedComparison(result.series[0], result.series[1])
@@ -154,7 +241,7 @@ function App() {
   function download() {
     if (result.status !== 'ready') return;
     try {
-      const bytes = makeWorkbook(result.series, source, note);
+      const bytes = makeWorkbook(result.series, source, note, { xLabel, yLabel });
       const url = URL.createObjectURL(
         new Blob([new Uint8Array(bytes).buffer], {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -190,9 +277,9 @@ function App() {
         <div>
           <span className="eyebrow">工具 02 · MSP 測試後處理</span>
           <h1>RvR Excel 繪圖工具</h1>
-          <p>貼上 dB 與 Mbps，預覽曲線，再下載含原生圖表的 Excel。</p>
+          <p>直接貼上 MSP 數值矩陣，預設擷取左上方 dB／Throughput，再下載 Excel。</p>
         </div>
-        <span className="offline">離線使用 · v1.0</span>
+        <span className="offline">離線使用 · v1.1</span>
       </header>
       <nav aria-label="資料格式">
         {(
@@ -223,14 +310,14 @@ function App() {
               ? '每行：dB、ON Mbps、OFF Mbps。測不到的值可留空。'
               : mode === 'separate'
                 ? 'ON、OFF 分別貼上兩欄。兩組可使用不同 dB 測點。'
-                : '每行左欄 dB，右欄 Mbps。可從 Excel 直接複製兩欄。'}
+                : '可貼上整塊 MSP 矩陣。預設只擷取左上方前兩欄，右側其他數值不納入曲線。'}
           </p>
           <label htmlFor="data">
             {mode === 'separate'
-              ? 'TxBF ON：dB／Mbps'
+              ? `TxBF ON 原始矩陣：${xLabel}／${yLabel}`
               : mode === 'common'
-                ? 'dB／ON Mbps／OFF Mbps'
-                : 'dB／Mbps'}
+                ? `原始矩陣：${xLabel}／ON ${yLabel}／OFF ${yLabel}`
+                : `原始矩陣：${xLabel}／${yLabel}`}
           </label>
           <textarea
             id="data"
@@ -243,15 +330,33 @@ function App() {
                 : 'dB\tMbps\n0\t980\n10\t920\n20\t850'
             }
           />
+          <Mapping
+            value={mapping[mappingKey]}
+            count={mode === 'common' ? 3 : 2}
+            prefix={mode === 'separate' ? 'ON ' : ''}
+            xName={xLabel}
+            yName={yLabel}
+            onChange={(value) => setMapping((previous) => ({ ...previous, [mappingKey]: value }))}
+          />
           {mode === 'separate' && (
             <>
-              <label htmlFor="off">TxBF OFF：dB／Mbps</label>
+              <label htmlFor="off">
+                TxBF OFF 原始矩陣：{xLabel}／{yLabel}
+              </label>
               <textarea
                 id="off"
                 spellCheck={false}
                 value={off}
                 onChange={(e) => changeText(e.target.value, true)}
                 placeholder="dB&#9;Mbps"
+              />
+              <Mapping
+                value={mapping.off}
+                count={2}
+                prefix="OFF "
+                xName={xLabel}
+                yName={yLabel}
+                onChange={(value) => setMapping((previous) => ({ ...previous, off: value }))}
               />
             </>
           )}
@@ -270,6 +375,7 @@ function App() {
                 setOn('');
                 setOff('');
                 setMetadata(defaultMetadata());
+                setMapping({ single: {}, common: {}, on: {}, off: {} });
                 setFileError('');
                 setMessage('');
               }}
@@ -292,6 +398,36 @@ function App() {
             dB 排序（整組數據一起排序）
           </label>
           <div className="metadata">
+            <div className="mapping-grid">
+              <label htmlFor="x-label">
+                X 欄名稱
+                <input
+                  id="x-label"
+                  maxLength={60}
+                  value={xLabel}
+                  onChange={(e) =>
+                    setMetadata((previous) => ({
+                      ...previous,
+                      [mode]: { ...previous[mode], xLabel: e.target.value },
+                    }))
+                  }
+                />
+              </label>
+              <label htmlFor="y-label">
+                Y 欄名稱與單位
+                <input
+                  id="y-label"
+                  maxLength={60}
+                  value={yLabel}
+                  onChange={(e) =>
+                    setMetadata((previous) => ({
+                      ...previous,
+                      [mode]: { ...previous[mode], yLabel: e.target.value },
+                    }))
+                  }
+                />
+              </label>
+            </div>
             <label htmlFor="source">數據來源</label>
             <select id="source" value={source} onChange={(e) => setSource(e.target.value)}>
               <option>使用者提供數據（未驗證量測來源）</option>
@@ -321,7 +457,7 @@ function App() {
           )}
           <p className="hint">
             支援 Tab、逗號、分號或空白分隔。每條曲線最多 1,000 點。空白不補 0，重複 dB
-            會提示處理。匯入檔案需為本工具的兩欄／三欄格式。
+            會提示處理。矩陣只擷取第一組連續數據；可修改起始行與欄位。圖片 OCR 尚未加入。
           </p>
         </section>
         <section className="preview">
@@ -337,7 +473,50 @@ function App() {
                 {result.missing ? ` · ${result.missing} 個空白值（曲線斷開）` : ''}
                 {result.reordered ? ' · 已依 dB 排序' : ''}
               </p>
-              <Chart series={result.series} labels={labels} />
+              {result.selections.map((selection, i) => (
+                <p className="selection-info" key={i}>
+                  {mode === 'separate' ? `${i === 0 ? 'ON' : 'OFF'}：` : ''}從第{' '}
+                  {selection.startRow} 行擷取，第 {selection.columns.join('、')} 欄。
+                  {selection.ignoredColumns > 0
+                    ? `右側／未選取 ${selection.ignoredColumns} 欄不納入曲線。`
+                    : ''}
+                  {selection.remainingRows > 0
+                    ? `下方 ${selection.remainingRows} 行未匯入（只取第一組數據）。`
+                    : ''}
+                </p>
+              ))}
+              <Chart
+                series={result.series}
+                labels={labels}
+                xLabel={xLabel || 'dB'}
+                yLabel={yLabel || 'Throughput (Mbps)'}
+              />
+              <details>
+                <summary>核對已擷取欄位</summary>
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>曲線</th>
+                        <th>{xLabel}</th>
+                        <th>{yLabel}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.series.flatMap((points, s) =>
+                        points.slice(0, 20).map((p, i) => (
+                          <tr key={`${s}-${i}`}>
+                            <td>{labels[s]}</td>
+                            <td>{p.db}</td>
+                            <td>{p.mbps ?? '空白'}</td>
+                          </tr>
+                        )),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="hint">顯示每組前 20 行供核對；下載包含全部擷取測點。</p>
+              </details>
             </>
           ) : (
             <div className="empty">
@@ -346,12 +525,17 @@ function App() {
               也可以先按「載入示範」查看操作。
             </div>
           )}
-          <button className="download" disabled={result.status !== 'ready'} onClick={download}>
+          <button
+            className="download"
+            disabled={result.status !== 'ready' || !xLabel.trim() || !yLabel.trim()}
+            onClick={download}
+          >
             下載 Excel 原生圖表 .xlsx
           </button>
           <p className="hint">
             Excel 的 Single 工作表用 A／B 欄；TxBF 工作表用 A／B（ON）與 D／E（OFF）。從第 7
             行開始，修改資料後圖表會更新。換一輪測試前先清除舊測點。
+            新版取消凍結窗格並顯示格線，圖表不再跨過凍結分界。
           </p>
           {message && (
             <p role="status" className="message">
@@ -359,7 +543,7 @@ function App() {
             </p>
           )}
           {mode !== 'single' && result.status === 'ready' && (
-            <details open>
+            <details open className="comparison">
               <summary>同 dB 的 ON／OFF 比較（{comparison.length} 點）</summary>
               <p className="hint">
                 僅比較兩組皆有量測值的相同 dB；不插值。比較時請保持其他測試條件一致。OFF 為 0
@@ -369,10 +553,10 @@ function App() {
                 <table>
                   <thead>
                     <tr>
-                      <th>dB</th>
-                      <th>ON Mbps</th>
-                      <th>OFF Mbps</th>
-                      <th>差值 Mbps</th>
+                      <th>{xLabel}</th>
+                      <th>ON {yLabel}</th>
+                      <th>OFF {yLabel}</th>
+                      <th>差值 {yLabel}</th>
                       <th>增益 %</th>
                     </tr>
                   </thead>

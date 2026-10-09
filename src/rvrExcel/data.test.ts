@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchedComparison, parseData } from './data';
+import { matchedComparison, parseData, parseMatrix } from './data';
 import { makeWorkbook } from './workbook';
 import { strFromU8, unzipSync } from 'fflate';
 
@@ -63,6 +63,20 @@ describe('RvR measured-data parsing', () => {
   });
 });
 describe('Reusable native Excel export', () => {
+  it('exports editable column and axis names, without frozen chart boundaries', () => {
+    const files = unzipSync(
+      makeWorkbook([[{ db: 0, mbps: 100 }]], 'user', '', {
+        xLabel: 'Loss <dB>',
+        yLabel: 'Data rate & Mbps',
+      }),
+    );
+    const sheet = strFromU8(files['xl/worksheets/sheet1.xml']);
+    const chart = strFromU8(files['xl/drawings/charts/chart1.xml']);
+    expect(sheet).toContain('Loss &lt;dB&gt;');
+    expect(chart).toContain('Data rate &amp; Mbps');
+    expect(sheet).not.toContain('<x:pane');
+    expect(sheet).toContain('showGridLines="1"');
+  });
   it('keeps native numeric XY bindings and blank gaps with typed input cells', () => {
     const files = unzipSync(
       makeWorkbook(
@@ -114,5 +128,70 @@ describe('Reusable native Excel export', () => {
     expect(strFromU8(files['xl/worksheets/sheet2.xml'])).toContain('SIMULATED');
     expect(strFromU8(files['xl/worksheets/sheet2.xml'])).toMatch(/r="E7"[^>]*><x:v>800<\/x:v>/);
     expect(strFromU8(files['xl/workbook.xml'])).toContain('activeTab="1"');
+  });
+});
+
+describe('MSP matrix extraction', () => {
+  it('reports duplicate values at their original matrix row', () => {
+    expect(() => parseMatrix('Report\nLoss\tRate\n0\t980\n0\t950', 2)).toThrow('第 4 行');
+  });
+  it('extracts the upper-left pair below captions and ignores other columns', () => {
+    const result = parseMatrix(
+      'MSP Report\nTest\tDL\t5G\nLoss\tRate\tRSSI\tMCS\n0\t980\t-40\t11\n7.5\t900\t-47\t10\n90\t0\t-99\t0',
+      2,
+    );
+    expect(result.series[0]).toEqual([
+      { db: 0, mbps: 980 },
+      { db: 7.5, mbps: 900 },
+      { db: 90, mbps: 0 },
+    ]);
+    expect(result.startRow).toBe(4);
+    expect(result.columns).toEqual([1, 2]);
+    expect(result.ignoredColumns).toBe(2);
+  });
+  it('finds the nearest left data columns after empty gutters', () => {
+    const result = parseMatrix('\t\tLoss\tRate\tExtra\n\t\t0\t980\t22\n\t\t10\t900\t23', 2);
+    expect(result.columns).toEqual([3, 4]);
+    expect(result.series[0][1].mbps).toBe(900);
+  });
+  it('keeps the first block separate and reports a later run rather than pooling it', () => {
+    const result = parseMatrix('dB\tRate\n0\t980\n10\t900\n\nSecond run\n0\t700\n10\t600', 2);
+    expect(result.series[0]).toHaveLength(2);
+    expect(result.remainingRows).toBe(3);
+    expect(parseMatrix('dB\tRate\n0\t980\nAverage\t980', 2).remainingRows).toBe(1);
+  });
+  it('allows explicit row and column mapping, paired sorting and missing values', () => {
+    const result = parseMatrix(
+      'title\nidx\tRate\tLoss\tExtra\n1\t0\t90\t12\n2\t\t40\t13\n3\t950\t0\t14',
+      2,
+      true,
+      { startRow: 3, columns: [3, 2] },
+    );
+    expect(result.series[0]).toEqual([
+      { db: 0, mbps: 950 },
+      { db: 40, mbps: null },
+      { db: 90, mbps: 0 },
+    ]);
+    expect(result.reordered).toBe(true);
+    expect(result.missing).toBe(1);
+  });
+  it('supports common BF columns while ignoring numeric matrix side columns', () => {
+    const result = parseMatrix('header\n0\t980\t970\t11\n20\t900\t870\t10\n90\t0\t\t0', 3);
+    expect(result.series).toHaveLength(2);
+    expect(result.series[1][2].mbps).toBeNull();
+    expect(result.ignoredColumns).toBe(1);
+  });
+  it.each(['0\tbad\t999', '0\t980\n10\tbad', '0\t980\n-1\t-2', '0\t980\n0\t900'])(
+    'rejects invalid selected samples %s',
+    (text) => expect(() => parseMatrix(text, 2)).toThrow(),
+  );
+  it('rejects duplicate mapping and out-of-range row/column settings', () => {
+    for (const options of [
+      { columns: [1, 1] },
+      { columns: [257, 2] },
+      { startRow: 3 },
+      { columns: [2.5, 3] },
+    ])
+      expect(() => parseMatrix('0\t980', 2, true, options)).toThrow();
   });
 });
