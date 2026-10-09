@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   Check,
   ChevronRight,
@@ -9,7 +10,7 @@ import {
   Send,
   Terminal,
 } from 'lucide-react';
-import type { LabState } from './engine/lab';
+import type { LabState, TestSettings } from './engine/lab';
 import {
   commandShortcuts,
   workflows,
@@ -17,6 +18,8 @@ import {
   evaluateWorkflowStep,
 } from './engine/workflow';
 import type { WorkflowActionId, WorkflowAttempt, WorkflowFeedback } from './engine/workflow';
+import { RVR_FLOW_ID, RVR_STEP_IDS, validateRvrPair } from './engine/rvrWorkflow';
+import type { RvrComparisonContext, RvrExportReceipt } from './engine/rvrWorkflow';
 
 export interface LabObservation {
   link: string;
@@ -64,6 +67,9 @@ export interface ActionExecution {
   output: string;
   before: LabObservation;
   after: LabObservation;
+  runId?: string;
+  exportReceipt?: RvrExportReceipt;
+  error?: string;
 }
 interface StepRecord {
   feedback: WorkflowFeedback;
@@ -81,6 +87,36 @@ interface Progress {
 const KEY = 'wifi-qa-workflows-v1';
 function fresh(): Progress {
   return { version: 1, selected: workflows[0].id, active: {}, records: {} };
+}
+function savedRunId(input: unknown): string | undefined {
+  return typeof input === 'string' && /^run-\d+$/.test(input) ? input : undefined;
+}
+function savedReceipt(input: unknown): RvrExportReceipt | undefined {
+  if (!input || typeof input !== 'object') return undefined;
+  const data = input as Partial<RvrExportReceipt>;
+  if (
+    !['csv', 'xlsx', 'report', 'log'].includes(data.kind || '') ||
+    !savedRunId(data.onRunId) ||
+    !savedRunId(data.offRunId) ||
+    !Number.isInteger(data.pointCount) ||
+    !(data.pointCount! > 0) ||
+    !Number.isFinite(data.generatedAt) ||
+    !(data.generatedAt! >= 0) ||
+    !Number.isInteger(data.bytes) ||
+    !(data.bytes! > 0) ||
+    (data.filename !== undefined &&
+      (typeof data.filename !== 'string' || data.filename.length > 256))
+  )
+    return undefined;
+  return {
+    kind: data.kind!,
+    onRunId: data.onRunId!,
+    offRunId: data.offRunId!,
+    pointCount: data.pointCount!,
+    generatedAt: data.generatedAt!,
+    bytes: data.bytes!,
+    filename: data.filename,
+  };
 }
 function restore(): Progress {
   const result = fresh();
@@ -132,6 +168,14 @@ function restore(): Progress {
               step.kind === 'action' && record.attempt.action === step.action
                 ? step.action
                 : undefined,
+            runId: savedRunId(record.attempt.runId),
+            onRunId: savedRunId(record.attempt.onRunId),
+            offRunId: savedRunId(record.attempt.offRunId),
+            exportReceipt: savedReceipt(record.attempt.exportReceipt),
+            error:
+              typeof record.attempt.error === 'string'
+                ? record.attempt.error.slice(0, 2000)
+                : undefined,
           },
           output: typeof record.output === 'string' ? record.output.slice(0, 6000) : undefined,
           before: validObservation(record.before) ? record.before : undefined,
@@ -174,6 +218,9 @@ export default function WorkflowView({
   resetKey,
   onCommand,
   onAction,
+  onSettings,
+  onOpenMsp,
+  renderComparisonChart,
 }: {
   state: LabState;
   execution: CommandExecution | null;
@@ -185,7 +232,10 @@ export default function WorkflowView({
     execute: boolean,
     context?: CommandContext,
   ) => void;
-  onAction: (action: WorkflowActionId) => ActionExecution;
+  onAction: (action: WorkflowActionId, comparison?: RvrComparisonContext) => ActionExecution;
+  onSettings: (settings: Partial<TestSettings>) => void;
+  onOpenMsp: () => void;
+  renderComparisonChart: (comparison: RvrComparisonContext) => ReactNode;
 }) {
   const [progress, setProgress] = useState(restore);
   const [tab, setTab] = useState<'workflow' | 'commands'>('workflow');
@@ -196,6 +246,7 @@ export default function WorkflowView({
   const [storageError, setStorageError] = useState(false);
   const seenExecution = useRef<number | undefined>(execution?.id);
   const seenReset = useRef(resetKey);
+  const resetPending = seenReset.current !== resetKey;
   const navigationView = useRef<HTMLDivElement>(null);
   const currentView = useRef<HTMLElement>(null);
   const previousStep = useRef({ workflowId: '', stepId: '' });
@@ -203,6 +254,25 @@ export default function WorkflowView({
   const index = progress.active[workflow.id] || 0;
   const step = workflow.steps[index];
   const records = progress.records[workflow.id] || {};
+  function comparisonFor(workflowId: string = workflow.id): RvrComparisonContext {
+    const items = progress.records[workflowId] || {};
+    return {
+      onRunId: items[RVR_STEP_IDS.startOn]?.attempt.runId,
+      offRunId: items[RVR_STEP_IDS.startOff]?.attempt.runId,
+    };
+  }
+  const comparison = comparisonFor();
+  const onRun = state.msp.runs.find((run) => run.id === comparison.onRunId);
+  const offRun = state.msp.runs.find((run) => run.id === comparison.offRunId);
+  const isRvr = workflow.id === RVR_FLOW_ID;
+  const pairCheck = isRvr
+    ? validateRvrPair(state, comparison.onRunId, comparison.offRunId)
+    : undefined;
+  const paramsDiffer =
+    !!onRun &&
+    (Object.keys(onRun.settings) as (keyof TestSettings)[]).some(
+      (key) => onRun.settings[key] !== state.msp.settings[key],
+    );
   const result = records[step.id];
   useEffect(() => {
     if (previousStep.current.workflowId === workflow.id && previousStep.current.stepId !== step.id)
@@ -210,11 +280,15 @@ export default function WorkflowView({
     previousStep.current = { workflowId: workflow.id, stepId: step.id };
   }, [workflow.id, step.id]);
   useEffect(() => {
-    if (result) navigationView.current?.scrollIntoView({ block: 'nearest' });
-  }, [result]);
+    if (!result || resetPending) return;
+    if (isRvr && result.feedback.status === 'waiting')
+      currentView.current?.scrollIntoView({ block: 'start' });
+    else navigationView.current?.scrollIntoView({ block: 'nearest' });
+  }, [workflow.id, step.id, result?.feedback.status, result?.attempt.startedAt, result?.output]);
   const shortcut = commandShortcuts.find((item) => item.id === shortcutId) || commandShortcuts[0];
 
   function record(workflowId: string, stepId: string, value: StepRecord) {
+    if (resetPending) return;
     setProgress((previous) => ({
       ...previous,
       records: {
@@ -234,6 +308,7 @@ export default function WorkflowView({
   useEffect(() => {
     if (seenReset.current === resetKey) return;
     seenReset.current = resetKey;
+    seenExecution.current = execution?.id;
     setProgress(fresh());
   }, [resetKey]);
   useEffect(() => {
@@ -243,7 +318,7 @@ export default function WorkflowView({
     setCommandDraft(resolveCommand(shortcut, state));
   }, [shortcut.id]);
   useEffect(() => {
-    if (!execution || execution.id === seenExecution.current) return;
+    if (resetPending || !execution || execution.id === seenExecution.current) return;
     seenExecution.current = execution.id;
     let targetWorkflow = workflow;
     let targetStep = step;
@@ -263,6 +338,7 @@ export default function WorkflowView({
       output: execution.output,
       os: execution.os,
       startedAt: execution.at,
+      ...comparisonFor(targetWorkflow.id),
     };
     record(targetWorkflow.id, targetStep.id, {
       feedback: evaluateWorkflowStep(targetStep, state, attempt),
@@ -273,16 +349,28 @@ export default function WorkflowView({
     });
   }, [execution?.id]);
   useEffect(() => {
-    if (step.kind !== 'wait') return;
-    const attempt = result?.attempt || { startedAt: state.clock };
+    if (resetPending || step.kind !== 'wait') return;
+    const attempt: WorkflowAttempt = {
+      ...result?.attempt,
+      startedAt: result?.attempt.startedAt ?? state.clock,
+      ...(step.id === RVR_STEP_IDS.waitStartOn ? {} : comparison),
+      onRunId: step.id === RVR_STEP_IDS.waitStartOn ? undefined : comparison.onRunId,
+      offRunId: step.id === RVR_STEP_IDS.waitStartOn ? undefined : comparison.offRunId,
+      runId:
+        step.id === RVR_STEP_IDS.waitOn
+          ? comparison.onRunId
+          : step.id === RVR_STEP_IDS.waitOff
+            ? comparison.offRunId
+            : result?.attempt.runId,
+    };
     const feedback = evaluateWorkflowStep(step, state, attempt);
     if (
       !result ||
       feedback.status !== result.feedback.status ||
       feedback.message !== result.feedback.message
     )
-      record(workflow.id, step.id, { attempt, feedback });
-  }, [workflow.id, step.id, state.clock]);
+      record(workflow.id, step.id, { ...result, attempt, feedback });
+  }, [workflow.id, step.id, state.clock, comparison.onRunId, comparison.offRunId]);
 
   function select(id: string) {
     setProgress((p) => ({ ...p, selected: id }));
@@ -301,17 +389,64 @@ export default function WorkflowView({
   }
   function act() {
     if (step.kind !== 'action') return;
-    const output = onAction(step.action);
+    const output = onAction(step.action, step.id === RVR_STEP_IDS.restoreOn ? {} : comparison);
     if (step.action === 'setup-rf-fault') {
       setProgress((previous) => ({
         ...previous,
-        records: { ...previous.records, [workflow.id]: {} },
+        records: { ...previous.records, [workflow.id]: {}, [RVR_FLOW_ID]: {} },
+        active: { ...previous.active, [RVR_FLOW_ID]: 0 },
       }));
     }
-    const attempt: WorkflowAttempt = { action: step.action, startedAt: output.state.clock };
+    const nextComparison: RvrComparisonContext =
+      step.id === RVR_STEP_IDS.restoreOn || step.action === 'rvr-prepare-dl-tcp'
+        ? {}
+        : { ...comparison };
+    if (step.action === 'rvr-start-on' && output.runId) {
+      nextComparison.onRunId = output.runId;
+      nextComparison.offRunId = undefined;
+    }
+    if (step.action === 'rvr-start-off' && output.runId) nextComparison.offRunId = output.runId;
+    const attempt: WorkflowAttempt = {
+      action: step.action,
+      startedAt: output.state.clock,
+      ...nextComparison,
+      runId: output.runId,
+      exportReceipt: output.exportReceipt,
+      error: output.error,
+    };
+    const feedback: WorkflowFeedback = output.error
+      ? {
+          status: 'failure',
+          message: output.error,
+          evidence: [],
+          hint: '先修正提示的條件，再重新執行本步。',
+        }
+      : evaluateWorkflowStep(step, output.state, attempt);
+    if (feedback.status === 'success' && isRvr) {
+      const cutoff =
+        step.action === 'rvr-prepare-dl-tcp'
+          ? 0
+          : step.action === 'rvr-start-on'
+            ? workflow.steps.findIndex((item) => item.id === RVR_STEP_IDS.startOn)
+            : step.action === 'rvr-start-off'
+              ? workflow.steps.findIndex((item) => item.id === RVR_STEP_IDS.startOff)
+              : -1;
+      if (cutoff >= 0)
+        setProgress((previous) => ({
+          ...previous,
+          records: {
+            ...previous.records,
+            [workflow.id]: Object.fromEntries(
+              Object.entries(previous.records[workflow.id] || {}).filter(
+                ([id]) => workflow.steps.findIndex((item) => item.id === id) < cutoff,
+              ),
+            ),
+          },
+        }));
+    }
     record(workflow.id, step.id, {
       attempt,
-      feedback: evaluateWorkflowStep(step, output.state, attempt),
+      feedback,
       output: output.output,
       before: output.before,
       after: output.after,
@@ -356,6 +491,60 @@ export default function WorkflowView({
             </select>
           </label>
           <p className="workflow-description">{workflow.description}</p>
+          {isRvr && (
+            <div className="workflow-rvr-summary" data-testid="rvr-live-data">
+              <div className="section-label">
+                本次比較 <span>AP TxBF · TCP DOWNLINK</span>
+              </div>
+              {[
+                { bf: 'ON', run: onRun },
+                { bf: 'OFF', run: offRun },
+              ].map(({ bf, run }) => (
+                <div
+                  className={`rvr-run-row ${bf.toLowerCase()}`}
+                  key={bf}
+                  data-bf={bf}
+                  data-runid={run?.id || ''}
+                  data-status={run?.status || 'idle'}
+                  data-points={run?.points.length || 0}
+                >
+                  <b>BF {bf}</b>
+                  <span>{run ? `${run.id} · ${run.status}` : '尚未開始'}</span>
+                  <strong>{run?.points.length || 0} 點</strong>
+                </div>
+              ))}
+              <p>
+                {state.msp.settings.start}–{state.msp.settings.end} dB ·{' '}
+                {state.msp.settings.duration} 秒／點 · P={state.msp.settings.streams} · Seed{' '}
+                {state.msp.settings.seed}
+              </p>
+              <div className="rvr-setting-actions">
+                <button onClick={onOpenMsp}>MSP 量測參數</button>
+                {onRun && (
+                  <button
+                    disabled={state.msp.status === 'running'}
+                    onClick={() => onSettings({ ...onRun.settings })}
+                  >
+                    套用 ON 的量測參數
+                  </button>
+                )}
+              </div>
+              {paramsDiffer && (
+                <p className="rvr-difference" data-testid="rvr-parameters-differ">
+                  目前量測參數與 ON 不同；開始 OFF 前需恢復一致。
+                </p>
+              )}
+              {onRun && offRun && (
+                <p
+                  className={pairCheck?.valid ? 'rvr-pair-valid' : 'rvr-difference'}
+                  data-testid="rvr-pair-validation"
+                  data-valid={pairCheck?.valid ? 'true' : 'false'}
+                >
+                  {pairCheck?.message}
+                </p>
+              )}
+            </div>
+          )}
           <div className="workflow-progress">
             <span>
               完成記錄 {count} / {workflow.steps.length}
@@ -419,6 +608,16 @@ export default function WorkflowView({
               <b>觀察重點</b>
               <p>{step.observe}</p>
             </div>
+            {isRvr &&
+              (step.kind === 'wait' ||
+                step.id === RVR_STEP_IDS.compare ||
+                (step.kind === 'action' && step.action.startsWith('rvr-export-'))) &&
+              (onRun || offRun) && (
+                <div className="workflow-rvr-chart">
+                  <small>本工作流的實際量測點 · ON 藍／OFF 紅</small>
+                  {renderComparisonChart(comparison)}
+                </div>
+              )}
             {step.kind === 'command' && (
               <>
                 <textarea
@@ -508,12 +707,21 @@ export default function WorkflowView({
                   {result.feedback.status === 'success'
                     ? '✓ 已驗證'
                     : result.feedback.status === 'waiting'
-                      ? '◷ 等待狀態恢復'
+                      ? isRvr
+                        ? '◷ 量測／連線進行中'
+                        : '◷ 等待狀態恢復'
                       : result.feedback.status === 'failure'
                         ? '需要再檢查'
                         : '準備執行'}
                 </strong>
                 <p>{result.feedback.message}</p>
+                {result.attempt.exportReceipt && (
+                  <p className="workflow-export-receipt" data-testid="rvr-export-receipt">
+                    下載已產生：{result.attempt.exportReceipt.filename} ·{' '}
+                    {result.attempt.exportReceipt.pointCount} 點 ·{' '}
+                    {result.attempt.exportReceipt.bytes.toLocaleString()} bytes
+                  </p>
+                )}
                 {result.feedback.hint && <p className="workflow-hint">{result.feedback.hint}</p>}
                 {result.before && result.after && (
                   <div className="workflow-deltas">

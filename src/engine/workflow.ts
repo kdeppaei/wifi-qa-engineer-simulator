@@ -1,5 +1,7 @@
 import { bandForRadio, radioForBand, type LabState } from './lab';
 import { observeCommand } from './scenario';
+import { evaluateRvrStep, RVR_FLOW_ID, RVR_STEP_IDS } from './rvrWorkflow';
+import type { RvrExportReceipt, RvrWorkflowActionId, RvrWorkflowCriterion } from './rvrWorkflow';
 
 export type CommandText = string | ((state: LabState) => string);
 export type WorkflowActionId =
@@ -8,7 +10,8 @@ export type WorkflowActionId =
   | 'set-attenuation-90'
   | 'setup-rf-fault'
   | 'ap-bf-on'
-  | 'ap-bf-off';
+  | 'ap-bf-off'
+  | RvrWorkflowActionId;
 export type WorkflowCriterion =
   | 'link-observed'
   | 'link-connected'
@@ -38,7 +41,8 @@ export type WorkflowCriterion =
   | 'scan-empty'
   | 'log-query'
   | 'attenuation-restored'
-  | 'rf-connected';
+  | 'rf-connected'
+  | RvrWorkflowCriterion;
 export interface CommandShortcut {
   id: string;
   label: string;
@@ -76,6 +80,11 @@ export interface WorkflowAttempt {
   action?: WorkflowActionId;
   startedAt?: number;
   exitCode?: number;
+  runId?: string;
+  onRunId?: string;
+  offRunId?: string;
+  exportReceipt?: RvrExportReceipt;
+  error?: string;
 }
 export interface WorkflowFeedback {
   status: 'ready' | 'waiting' | 'success' | 'failure';
@@ -739,6 +748,183 @@ export const workflows: Workflow[] = [
   },
 ];
 
+workflows.push({
+  id: RVR_FLOW_ID,
+  title: '完整 BF ON / OFF DL RvR 與匯出',
+  description:
+    '保留舊資料，綁定本輪 Run ID，以相同 DL / TCP 條件比較 AP TxBF 並匯出完整實際模擬點。',
+  steps: [
+    actionStep(
+      RVR_STEP_IDS.prepare,
+      '準備 DL / TCP 比較',
+      'rvr-prepare-dl-tcp',
+      'rvr-prepared',
+      '只設定方向與 Protocol，保留目前 Start / End、步進、時間、Seed 和 Server。',
+      'End 大於 Start；其餘 Sweep 參數由你確認。',
+      'DL / TCP 與有效的多點 Sweep 已準備。',
+    ),
+    commandStep(
+      RVR_STEP_IDS.link,
+      '確認目前 STA 關聯',
+      'iw dev stamld0 link',
+      'link-connected',
+      '使用目前 Band 的同一條 Wi-Fi 鏈路，選流程不會重置現場。',
+      'Connected、SSID、頻率與實際 PHY。',
+      '目前 AP / STA 已有效關聯。',
+    ),
+    commandStep(
+      RVR_STEP_IDS.server,
+      '確認有線 Server',
+      (state) => `iperf3 -s -p ${state.msp.settings.port} -i 1 -f m`,
+      'server-listening',
+      'Server Port 必須與這輪 Sweep 一致。',
+      'PC Server listening、實際 IP / Port。',
+      '指定有線 Server 正在監聽。',
+      'windows',
+    ),
+    commandStep(
+      RVR_STEP_IDS.ping,
+      '驗證 DUT 到 Server',
+      pingCommand,
+      'server-ping',
+      '關聯與 IP 路徑都要驗證，管理繞行必須關閉。',
+      '0% loss；核對 stamld0 與 Server 端點。',
+      'Wi-Fi 預定 IP 路徑可達。',
+    ),
+    actionStep(
+      RVR_STEP_IDS.apOn,
+      '將 DL 發送端 BF 設為 ON',
+      'ap-bf-on',
+      'rvr-ap-on',
+      'DL 的發送端是 AP，這輪只切換 AP TxBF。',
+      'AP TxBF ON；STA 與網路配置保持不變。',
+      '已確認實際 AP BF ON。',
+    ),
+    actionStep(
+      RVR_STEP_IDS.restoreOn,
+      '恢復 ON 輪次起點',
+      'rvr-restore-start',
+      'rvr-at-start',
+      '調整實際衰減器 Readback，不能只看 startATT。',
+      'Readback 等於目前 Sweep Start。',
+      '實際衰減器位於 ON 起點。',
+    ),
+    waitStep(
+      RVR_STEP_IDS.waitStartOn,
+      '等待起點鏈路正常',
+      'rvr-connected-start',
+      '若鏈路曾中斷，等待真實掃描與認證；原本仍正常的鏈路可直接確認。',
+      '起點 Readback 與 STA Connected。',
+      '可進行 ON 前檢。',
+    ),
+    actionStep(
+      RVR_STEP_IDS.startOn,
+      '開始並捕捉本輪 ON',
+      'rvr-start-on',
+      'rvr-on-started',
+      '開始測試時保存不可變參數與 Metadata，捕捉這次的新 Run ID。',
+      '新的 ON Run ID、DL / TCP、AP 發送端。',
+      '本輪 ON 已開始並捕捉 ID。',
+    ),
+    waitStep(
+      RVR_STEP_IDS.waitOn,
+      '等待完整 ON Sweep',
+      'rvr-on-complete',
+      '只驗收剛捕捉的 Run，不會替換成舊 ON 曲線。',
+      '逐點量測；中斷保留部分資料並阻擋正式比較。',
+      '指定 ON 完整涵蓋實際起點與終點。',
+    ),
+    actionStep(
+      RVR_STEP_IDS.restoreOff,
+      '回到已捕捉 ON 的起點',
+      'rvr-restore-start',
+      'rvr-at-captured-start',
+      'OFF 起點沿用已捕捉 ON；不會靜默改寫你後來變更的 Sweep 參數。',
+      'Readback 回到 ON Snapshot 的 Start。',
+      '實際衰減器回到本輪同一起點。',
+    ),
+    waitStep(
+      RVR_STEP_IDS.waitStartOff,
+      '等待 OFF 起點鏈路正常',
+      'rvr-connected-captured-start',
+      '先恢復鏈路，再切換發送端 BF，保留故障與量測證據。',
+      '指定起點與真實 Connected。',
+      'OFF 起點鏈路正常。',
+    ),
+    actionStep(
+      RVR_STEP_IDS.apOff,
+      '只切換 AP BF 為 OFF',
+      'ap-bf-off',
+      'rvr-ap-off',
+      'DL 比較只改 AP TxBF。Seed、Band、STA Runtime、Server 與 Ethernet 瓶頸不可變。',
+      'AP OFF；其他條件與已捕捉 ON 比較。',
+      '已確認 AP BF OFF。',
+    ),
+    actionStep(
+      RVR_STEP_IDS.startOff,
+      '前檢並開始本輪 OFF',
+      'rvr-start-off',
+      'rvr-off-started',
+      '若任何控制條件改變，會阻擋 Start；不會替你覆寫 Seed 或配置。',
+      '本輪 ON ID、全套匹配參數、新 OFF ID。',
+      'OFF 使用與本輪 ON 相同的控制條件並捕捉新 ID。',
+    ),
+    waitStep(
+      RVR_STEP_IDS.waitOff,
+      '等待完整 OFF Sweep',
+      'rvr-off-complete',
+      '只追蹤指定 OFF，不把中斷點當作完成結果。',
+      '完整實際起點與終點；低吞吐自適應步進可能使點數與 ON 不同。',
+      '指定 OFF 完整完成。',
+    ),
+    actionStep(
+      RVR_STEP_IDS.compare,
+      '明確驗證本輪公平比較',
+      'rvr-verify-pair',
+      'rvr-pair-valid',
+      '比較 Run Snapshot，只有 AP TxBF 可不同；保留各輪真實點，不插補成假量測。',
+      '相同 Seed、Sweep、Band、AP、Runtime、Server、瓶頸與模型版本。',
+      '指定本輪 ON / OFF 完整且可比較。',
+    ),
+    actionStep(
+      RVR_STEP_IDS.exportCsv,
+      '匯出本輪 CSV',
+      'rvr-export-csv',
+      'rvr-exported-csv',
+      '只匯出本輪指定的 ON / OFF 實際模擬點。',
+      '下載內容、Run ID 與實際點數。',
+      'CSV 已生成，並已送出瀏覽器下載請求。',
+    ),
+    actionStep(
+      RVR_STEP_IDS.exportXlsx,
+      '匯出本輪 Excel 與圖表',
+      'rvr-export-xlsx',
+      'rvr-exported-xlsx',
+      '保留兩輪各自的 Attenuation Grid、參數與 Metadata。',
+      '原始資料表與 BF ON / OFF 曲線。',
+      'XLSX 已生成，並已送出瀏覽器下載請求。',
+    ),
+    actionStep(
+      RVR_STEP_IDS.exportReport,
+      '匯出本輪測試報告',
+      'rvr-export-report',
+      'rvr-exported-report',
+      '報告標記模擬資料及實際 AP 發送端 BF。',
+      '指定兩輪的控制條件、結果與限制。',
+      'HTML Report 已生成，並已送出瀏覽器下載請求。',
+    ),
+    actionStep(
+      RVR_STEP_IDS.exportLog,
+      '匯出本輪證據 Log',
+      'rvr-export-log',
+      'rvr-exported-log',
+      '保存比較期間事件，完整工作區的舊資料仍保留。',
+      'ON 到 OFF 的量測、衰減與設定事件。',
+      '本輪 Log 已生成，並已送出瀏覽器下載請求。',
+    ),
+  ],
+});
+
 const canonical = (source: string): string =>
   source
     .replace(/(['"])(.*?)\1/g, '$2')
@@ -874,6 +1060,14 @@ export function evaluateWorkflowStep(
     hint?: string,
     evidence: string[] = [],
   ): WorkflowFeedback => ({ status, message, hint, evidence });
+  if (attempt?.error) return feedback('failure', attempt.error);
+  if (step.criterion.startsWith('rvr-')) {
+    if (step.kind === 'action' && !attempt)
+      return feedback('ready', '明確執行本步後，將驗收本輪 Run ID 與真實設備狀態。');
+    if (step.kind === 'action' && attempt?.action !== step.action)
+      return feedback('failure', '尚未執行本步指定的 RvR 操作。');
+    return evaluateRvrStep(step.criterion as RvrWorkflowCriterion, state, attempt);
+  }
   if (step.kind === 'wait') {
     if (stateSatisfied(step.criterion, state)) return feedback('success', step.expected);
     const reason =

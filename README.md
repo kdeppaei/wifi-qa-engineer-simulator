@@ -34,12 +34,13 @@ Playwright 會啟動本機 dev server。已有相同版本 Chromium 時可省略
 
 按工作台的「指令工作流」開啟右側面板。選擇工作流不會自動重置 AP、STA、衰減器或量測。每一步提供原因、觀察重點、可編輯的指令與預期結果；可以保留目前故障現場，照自己的速度操作。
 
-| 工作流                      | 練習內容                                                                           |
-| --------------------------- | ---------------------------------------------------------------------------------- |
-| 連線與流量方向基礎          | 分別確認 STA 關聯、DUT／PC IPv4、PC Server、Ping、UL 與 DL                         |
-| UCI BF 設定生命週期         | 比較 Pending、Committed 與 Driver Runtime，提交後重新初始化並等待 STA 恢復         |
-| 6G → 5G APCLI 遷移          | 先變更 AP，再查看及修改 STA SSID／Device，提交、重啟，最後驗證 5180 MHz 與 IP 路徑 |
-| Reboot 後未連線：排查與恢復 | 從 link、配置、scan 與 Log 收集證據，核對 RF readback，再觀察重新掃描與關聯        |
+| 工作流                         | 練習內容                                                                           |
+| ------------------------------ | ---------------------------------------------------------------------------------- |
+| 連線與流量方向基礎             | 分別確認 STA 關聯、DUT／PC IPv4、PC Server、Ping、UL 與 DL                         |
+| UCI BF 設定生命週期            | 比較 Pending、Committed 與 Driver Runtime，提交後重新初始化並等待 STA 恢復         |
+| 6G → 5G APCLI 遷移             | 先變更 AP，再查看及修改 STA SSID／Device，提交、重啟，最後驗證 5180 MHz 與 IP 路徑 |
+| Reboot 後未連線：排查與恢復    | 從 link、配置、scan 與 Log 收集證據，核對 RF readback，再觀察重新掃描與關聯        |
+| 完整 BF ON / OFF DL RvR 與匯出 | 19 步完成本輪 AP BF ON／OFF Sweep、同條件比較、CSV／原生 Excel／報告／Log 匯出     |
 
 「送入 VT／CMD」只把指令填入真正的虛擬終端，不會執行；可在終端修改後按 Enter。「執行本步」會立即走同一條終端執行路徑，產生相同的設備變更、Log 與操作證據。手打指令、歷史、Tab 補完與多行輸入仍可使用。常用指令頁籤提供 26 個 VT／CMD 快捷選單；Radio、Server IP／Port 改變後，按「依目前狀態更新指令」取得新範本，避免覆蓋自己編輯中的內容。
 
@@ -49,7 +50,35 @@ VT 在 `wpa_cli` 互動模式時，先按「退出 wpa_cli」或輸入 `quit` �
 
 故障工作流的「明確載入故障場景」是刻意建立新練習環境，會清除目前量測；面板在執行前提示，可先下載快照。單純切換工作流不會注入故障。工作流選擇、目前步驟、指令輸出與完成記錄保存在獨立 localStorage；完成代表當時驗證成功，目前連線仍以工具即時狀態為準。「重練」只清除本工作流進度、保留設備。JSON 實驗室快照不包含工作流進度；載入快照或重置實驗室會清除工作流進度，避免套用另一現場的完成記錄。
 
+Learning Center 載入會重置設備的章節環境時，也清除工作流進度；故障工作流明確載入新場景時，清除該故障流程及 RvR 比較的記錄與 Run ID 綁定，避免把另一現場重用的編號當成原比較結果。
+
 ![指令工作流與共用狀態回饋](docs/workflow-preview.png)
+
+## 一條工作流完成 BF ON／OFF RvR
+
+使用目前已連線的 AP／STA，可在同一個 5 GHz 或 6 GHz 環境完成比較。選「完整 BF ON / OFF DL RvR 與匯出」不會重置 Band、AP、STA 或舊結果；第一步「準備 DL / TCP 比較」只把 MSP 設為 DL／TCP，沿用目前 Sweep、Seed 與 Server 設定。
+
+1. 在「MSP 量測參數」確認起點、終點、正常／低速步進、低速門檻、每點時間、Streams、Seed、Server IP／Port。End 必須大於 Start，完整結果至少兩點。首次預設為 0–60 dB、5 dB 正常步進、低速 1 dB、3 秒／點、20 streams、192.168.1.200:9002。
+2. 依面板執行 STA link 查詢、在 Windows CMD 啟動有線 iperf3 Server、由 DUT Ping Server。STA 必須有效關聯，Pending 與尚未載入的配置須先處理，管理 Ethernet 繞行必須關閉。
+3. 將 **AP TxBF 設為 ON**，把衰減器實際 Readback 恢復起點，等待 Connected。這是 DL 的發送端；不要拿 STA 的 `etxbfencond` 代替 AP BF。
+4. 按「開始並捕捉本輪 ON」，再到「等待完整 ON Sweep」。面板保存新 Run ID、參數與 Metadata，顯示逐點累積、實際曲線及 running／completed／interrupted 狀態；不會拿先前的 ON 曲線代替本輪。
+5. ON 完成後，衰減器仍在末值。按「回到已捕捉 ON 的起點」，等待 OFF 起點鏈路正常，再**只切 AP BF 為 OFF**。保留相同 Band、SSID、Channel、NSS、配置／協商頻寬、STA 三層設定、Seed、全部 Sweep／流量參數、Server 與 Ethernet 瓶頸。
+6. 按「前檢並開始本輪 OFF」。任何控制條件不同都會阻擋開始，提示具體差異。若不慎改了 MSP 參數，可明確按「套用 ON 的量測參數」還原該組設定；這個按鈕不會修正 AP、STA、網路或衰減器。
+7. 等指定 OFF 完整完成，再按「明確驗證本輪公平比較」。兩輪都必須完整包含起點與終點、無中斷、無繞行，且保存的控制條件只有 AP TxBF 不同。低吞吐自適應步進可能讓 ON／OFF 的衰減格點與點數不同；圖表使用各輪原始點，不補零、不偽造相同格點。
+8. 依序執行四個「匯出本輪」操作。回饋顯示指定 ON／OFF Run ID、點數、檔名及 bytes，表示已產生並送出瀏覽器下載；檔案的儲存位置依瀏覽器設定。
+
+| 工作流匯出                      | 內容                                                                                                      |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `wifi-qa-bf-on-off.csv`         | 只含這兩輪的原始點，以及 Band、方向、實際發送 BF、STA 配置／Runtime BF、RF／PHY、Seed 與流量欄位          |
+| `wifi-qa-bf-on-off.xlsx`        | Curve、Measurements、Metadata、Log；原生可編輯 XY 圖表恰有 BF ON／OFF 兩個 Series，直接參照真實資料儲存格 |
+| `wifi-qa-bf-on-off-report.html` | 可離線開啟的 HTML／SVG 疊圖、兩輪組態與 Runtime 快照、原始點、保留現場 Log 及模擬限制                     |
+| `wifi-qa-bf-on-off-test.log`    | 指定 Run ID、兩輪參數／Metadata／點資料及 ON 開始至 OFF 完成期間的保留現場事件                            |
+
+完整 Channel、頻寬、AP／STA、Firmware／Model、網路與瓶頸 Metadata 保存在 XLSX、HTML 與證據 Log；CSV 是逐點資料表。Log 可能包含同期間其他操作，且工作區只保留最近 3000 條事件，不能當作完整硬體追蹤。
+
+舊 Run 保留在 MSP／Result Analyzer；工作流的等待圖表、比較與四個匯出只使用本輪捕捉的 ON／OFF ID，不選最後兩條曲線。中斷或遺失的 Run 會阻擋正式比較與匯出，部分點仍可檢查。重新開始 ON 會清除本流程後續的驗證記錄，重新開始 OFF 會清除比較及匯出記錄；設備與舊 Run 不會被刪除。
+
+![完整 BF ON／OFF RvR 工作流](docs/rvr-workflow-preview.png)
 
 ## 第一條完整工作流程
 
@@ -76,8 +105,7 @@ ping -c 4 192.168.1.200
 
 應看到 5180 MHz 和 Connected。單獨 Ping 成功不等於 Wi-Fi 路徑驗證；Topology 可啟用管理 Ethernet 繞行，MSP 會拒絕在該路徑作 Wi-Fi RvR。
 
-4. AP TxBF ON，MSP 選 DL／TCP，Start Test。預設 Server 192.168.1.200:9002、20 streams、3 秒／點、0–60 dB、5 dB 正常步進；低吞吐時改為 1 dB。曲線逐點產生，完成後衰減器保留末值。Test Parameters 可改設定。
-5. 恢復衰減起點。在 VT 切換本教材定義的 STA BF OFF：
+4. 若要一併完成 Chapter 5 的 STA BF OFF 教材目標，先在任何 ON／OFF 比較開始前設定：
 
 ```sh
 uci set wireless.MT7999_1_2.etxbfencond=0
@@ -85,11 +113,12 @@ uci commit wireless
 wifi restart
 ```
 
-`uci get`、Committed、Driver Runtime 為不同層。在 Result Analyzer 可並排查看。等待 STA Connected。
+`uci get`、Committed、Driver Runtime 為不同層。在 Result Analyzer 可並排查看。等待 STA Connected。也可用「UCI BF 設定生命週期」練習；新 DL 比較工作流要求兩輪之間維持相同 STA 配置。
 
-6. **DL 的無線發送端是 AP**。在 AP Configuration 另把 AP Tx Beamforming 切到 OFF，再跑一次 DL，才會生成由 AP BF 條件分類的 ON/OFF 疊圖。只切換 STA 發送 BF，不會假冒 AP 的 DL 發送 BF 改變。UL 使用套用後的 STA BF。
-7. 結果可匯出 CSV、原生可編輯 XLSX XY 疊圖、HTML/SVG 報告與測試 Log。每次 run 保存 AP、三層設定、Runtime、Band、發送端、Seed、Channel Width、流量參數。Result Analyzer 的曲線名稱可修改。
-8. 測試進行時把 Attenuator 調到 90 dB，會使 STA 斷線、MSP 中斷並保留已量測的點。Serial 控制連線仍可使用。
+5. 選「完整 BF ON / OFF DL RvR 與匯出」，照上述 19 步工作流確認環境、AP TxBF ON、恢復衰減起點並開始 ON，等待完整 Sweep。
+6. 恢復同一起點、等待 Connected，只把 AP TxBF 切 OFF，再開始相同參數的 OFF。DL 的發送 BF 由 AP 決定；UL 才使用已套用的 STA BF。
+7. 驗證指定 ON／OFF 完整且同條件，從工作流匯出本輪 CSV、原生可編輯 XLSX XY 疊圖、HTML/SVG 報告與證據 Log。MSP／Result Analyzer 的一般匯出保留整個工作區結果；曲線名稱仍可修改。
+8. 完成比較後，可另開一輪 Sweep，在測試進行時把 Attenuator 調到 90 dB，會使 STA 斷線、MSP 中斷並保留已量測的點。Serial 控制連線仍可使用。
 9. 在 VT 查 `iw dev stamld0 link`、`logread`、`wpa_cli -i stamld0 scan_results`；還原衰減起點後等待掃描、關聯，系統才逐步恢復。測試須自行重新 Start，原中斷 run 不會被覆寫。
 10. 重新整理，設定、量測、Terminal VFS、操作歷史與教學進度仍在。儲存快照按鈕另下載 JSON；載入按鈕可恢復。正在跑的測試若重新整理，會標記中斷，避免杜撰頁面關閉期間的量測。
 
@@ -117,7 +146,8 @@ src/engine/terminal.ts  Shell AST、虛擬檔案系統、UCI／Windows 命令
 src/engine/export.ts    CSV、OOXML XLSX native chart、HTML 報告
 src/engine/scenario.ts  實際查詢證據與狀態驗收、可比較的 ON/OFF 條件
 src/engine/storage.ts   快照驗證與損壞存檔防護
-src/engine/workflow.ts  指令範本、四條工作流及輸出／狀態驗證
+src/engine/workflow.ts  指令範本、五條工作流及輸出／狀態驗證
+src/engine/rvrWorkflow.ts  指定 Run ID、完整 RvR／同條件前檢與匯出子集
 src/WorkflowView.tsx    工作流面板、指令送入／執行、獨立進度保存
 src/App.tsx            多視窗操作、GUI、Terminal、章節與保存
 src/style.css          深色工作台、桌面及響應式介面

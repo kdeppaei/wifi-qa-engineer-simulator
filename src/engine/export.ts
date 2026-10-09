@@ -110,14 +110,27 @@ const headers: Row = [
   'Simulation',
 ];
 
+function stationBf(values: Record<string, string>): string | undefined {
+  const sections = Object.keys(values)
+    .filter((key) => key.startsWith('wireless.') && key.endsWith('.mode') && values[key] === 'sta')
+    .map((key) => key.slice(0, -5));
+  const section =
+    sections.find((key) => key === 'wireless.stamld0') ??
+    sections.find((key) => values[`${key}.ifname`] === 'stamld0') ??
+    sections[0] ??
+    'wireless.stamld0';
+  const radio = values[`${section}.device`]?.replace(/["']/g, '').split(/\s+/)[0];
+  return radio ? values[`wireless.${radio}.etxbfencond`] : undefined;
+}
+
 function measurementRows(state: LabState): Row[] {
   const rows: Row[] = [headers];
   for (const run of state.msp.runs) {
-    const runtimeRadio = run.metadata.runtime['wireless.stamld0.device']?.split(/\s+/)[0];
-    const staBf = run.metadata.runtime[`wireless.${runtimeRadio}.etxbfencond`];
     const configured = { ...run.metadata.committed, ...run.metadata.pending };
-    const configuredRadio = configured['wireless.stamld0.device']?.split(/\s+/)[0];
-    const configuredBf = configured[`wireless.${configuredRadio}.etxbfencond`];
+    for (const key of Object.keys(configured))
+      if (configured[key] === '__DELETE__') delete configured[key];
+    const staBf = stationBf(run.metadata.runtime);
+    const configuredBf = stationBf(configured);
     for (const p of run.points) {
       rows.push([
         run.id,

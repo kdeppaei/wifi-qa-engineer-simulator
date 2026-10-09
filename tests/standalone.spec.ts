@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { unzipSync, strFromU8 } from 'fflate';
+import type { LabState } from '../src/engine/lab';
 
 const standalonePath = resolve('dist/wifi-qa-lab.html');
 
@@ -122,4 +123,131 @@ test('standalone file works offline, recovers RF, downloads results and preserve
   await expect(page.getByTestId('attenuation-value')).toHaveText('0');
   expect(exceptions, 'Standalone file must have no JavaScript exceptions').toEqual([]);
   await page.screenshot({ path: testInfo.outputPath('standalone-ui-preview.png'), fullPage: true });
+});
+
+test('standalone file completes a pinned BF ON/OFF DL pair and downloads native Excel offline', async ({
+  page,
+  context,
+}, testInfo) => {
+  test.skip(!existsSync(standalonePath), 'Build the current standalone HTML before this test.');
+  const exceptions: string[] = [];
+  page.on('pageerror', (error) => exceptions.push(error.message));
+  await context.route(/^https?:\/\//, (route) => route.abort('internetdisconnected'));
+  await page.clock.install({ time: new Date('2026-10-09T12:00:00+08:00') });
+  await page.goto(pathToFileURL(standalonePath).href);
+  await expect(page.getByRole('heading', { name: '你的 Wi-Fi 測試工作台' })).toBeVisible();
+  await page.clock.pauseAt(new Date('2026-10-09T12:01:00+08:00'));
+  expect(page.url()).toMatch(/^file:\/\//);
+  await expect(page.locator('script[src]')).toHaveCount(0);
+  await page.getByRole('button', { name: '測試參數', exact: true }).click();
+  for (const [key, value] of [
+    ['start', '0'],
+    ['end', '60'],
+    ['step', '20'],
+    ['lowStep', '20'],
+    ['threshold', '0'],
+    ['duration', '1'],
+    ['seed', '7999'],
+  ] as const)
+    await page.getByLabel(key, { exact: true }).fill(value);
+  await page
+    .locator('.workspace-actions')
+    .getByRole('button', { name: '指令工作流', exact: true })
+    .click();
+  await page.getByLabel('工作流程', { exact: true }).selectOption('rvr-bf-comparison');
+
+  const perform = async (id: string, status = 'success') => {
+    const row = page.getByTestId(`workflow-step-${id}`);
+    await row.click();
+    await expect(row).toHaveAttribute('aria-current', 'step');
+    const current = page.getByTestId('workflow-current');
+    const action = current.getByRole('button', { name: '執行本步操作', exact: true });
+    const command = current.getByRole('button', { name: '執行本步', exact: true });
+    if (await action.count()) await action.click();
+    else if (await command.count()) await command.click();
+    await expect(row).toHaveAttribute('data-status', status);
+  };
+  const state = (): Promise<LabState> =>
+    page.evaluate(() => JSON.parse(localStorage.getItem('wifi-qa-lab-v1') || 'null').lab);
+  for (const id of [
+    'rvr-prepare',
+    'rvr-link',
+    'rvr-server',
+    'rvr-ping',
+    'rvr-ap-on',
+    'rvr-restore-on',
+    'rvr-wait-start-on',
+    'rvr-start-on',
+  ])
+    await perform(id);
+  const onId = (await state()).msp.activeRunId!;
+  await perform('rvr-wait-on', 'waiting');
+  await page.clock.runFor(1_000);
+  expect((await state()).msp.runs[0].points).toHaveLength(1);
+  await page.clock.runFor(3_000);
+  await expect(page.getByTestId('workflow-step-rvr-wait-on')).toHaveAttribute(
+    'data-status',
+    'success',
+  );
+  for (const id of ['rvr-restore-off', 'rvr-wait-start-off', 'rvr-ap-off', 'rvr-start-off'])
+    await perform(id);
+  const offId = (await state()).msp.activeRunId!;
+  expect(offId).not.toBe(onId);
+  await perform('rvr-wait-off', 'waiting');
+  await page.clock.runFor(4_000);
+  await expect(page.getByTestId('workflow-step-rvr-wait-off')).toHaveAttribute(
+    'data-status',
+    'success',
+  );
+  await perform('rvr-compare');
+  const runs = (await state()).msp.runs;
+  expect(runs.map((run) => run.id)).toEqual([onId, offId]);
+  expect(runs.every((run) => run.status === 'completed')).toBe(true);
+  expect(runs.map((run) => run.points.map((point) => point.attenuation))).toEqual([
+    [0, 20, 40, 60],
+    [0, 20, 40, 60],
+  ]);
+  expect(runs[1].settings).toEqual(runs[0].settings);
+  expect(runs[0].points.every((point) => point.bf)).toBe(true);
+  expect(runs[1].points.every((point) => !point.bf)).toBe(true);
+  expect(runs[0].points.at(-1)!.throughput).toBeGreaterThan(runs[1].points.at(-1)!.throughput);
+
+  const received = page.waitForEvent('download');
+  await perform('rvr-export-xlsx');
+  const download = await received;
+  expect(download.suggestedFilename()).toMatch(/^wifi-qa-bf-on-off.*\.xlsx$/);
+  const exportPath = testInfo.outputPath('standalone-bf-on-off.xlsx');
+  await download.saveAs(exportPath);
+  const zip = unzipSync(new Uint8Array(await readFile(exportPath)));
+  const data = strFromU8(zip['xl/worksheets/sheet2.xml']);
+  expect(data).toContain(`>${onId}</t>`);
+  expect(data).toContain(`>${offId}</t>`);
+  expect(data.match(/>SIMULATED<\/t>/g)).toHaveLength(8);
+  const chart = strFromU8(zip['xl/charts/chart1.xml']);
+  expect(chart.match(/<c:ser>/g)).toHaveLength(2);
+  expect(chart).toContain('BF ON');
+  expect(chart).toContain('BF OFF');
+
+  await page.reload();
+  await page
+    .locator('.workspace-actions')
+    .getByRole('button', { name: '指令工作流', exact: true })
+    .click();
+  await expect(page.getByLabel('工作流程', { exact: true })).toHaveValue('rvr-bf-comparison');
+  for (const [bf, id] of [
+    ['ON', onId],
+    ['OFF', offId],
+  ]) {
+    const row = page.getByTestId('rvr-live-data').locator(`.rvr-run-row[data-bf="${bf}"]`);
+    await expect(row).toHaveAttribute('data-runid', id);
+    await expect(row).toHaveAttribute('data-status', 'completed');
+    await expect(row).toHaveAttribute('data-points', '4');
+  }
+  await perform('rvr-compare');
+  expect((await state()).msp.runs).toEqual(runs);
+  expect(exceptions, 'The complete offline pair must have no JavaScript exceptions').toEqual([]);
+  await page.screenshot({
+    path: testInfo.outputPath('standalone-rvr-workflow-preview.png'),
+    fullPage: true,
+  });
 });

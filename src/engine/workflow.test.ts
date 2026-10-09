@@ -45,6 +45,7 @@ describe('workflow definitions and actual supported commands', () => {
       'uci-bf-lifecycle',
       'migrate-5g',
       'rf-recovery',
+      'rvr-bf-comparison',
     ]);
     for (const item of workflows)
       for (const current of item.steps) {

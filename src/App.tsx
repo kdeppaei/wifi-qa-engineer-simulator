@@ -43,6 +43,13 @@ import { parseSnapshot } from './engine/storage';
 import WorkflowView, { observeLab } from './WorkflowView';
 import type { CommandContext, CommandExecution, ActionExecution } from './WorkflowView';
 import type { WorkflowActionId } from './engine/workflow';
+import {
+  selectRvrPairState,
+  validateRvrOnPreflight,
+  validateRvrOffPreflight,
+  validateRvrPair,
+} from './engine/rvrWorkflow';
+import type { RvrComparisonContext, RvrExportReceipt } from './engine/rvrWorkflow';
 
 const STORAGE = 'wifi-qa-lab-v1';
 type Tool =
@@ -117,6 +124,7 @@ function download(name: string, data: string | Uint8Array, type = 'text/plain;ch
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return blob.size;
 }
 
 function Panel({
@@ -596,44 +604,181 @@ export default function App() {
     }
     setPendingCommand(null);
   }, [pendingCommand, opened, minimized]);
-  function workflowAction(action: WorkflowActionId): ActionExecution {
+  function workflowAction(
+    action: WorkflowActionId,
+    comparison: RvrComparisonContext = {},
+  ): ActionExecution {
     const before = observeLab(engine.state);
     let output = '';
-    act(() => {
-      switch (action) {
-        case 'configure-ap-5g':
-          engine.updateAP({ band: '5', ssid: 'BN68', channel: 36 });
-          output = 'AP 已設為 5 GHz / BN68 / Channel 36。觀察 STA 是否需要遷移 Radio。';
-          break;
-        case 'restore-attenuation':
-          engine.setAttenuation(engine.state.attenuation.start);
-          output = `衰減器已回到 ${engine.state.attenuation.start} dB，觀察掃描與重新關聯。`;
-          break;
-        case 'set-attenuation-90':
-          engine.setAttenuation(90);
-          output = '衰減器設為 90 dB，請觀察 STA、MSP 與 Log。';
-          break;
-        case 'setup-rf-fault':
-          engine.reset('5');
-          engine.stage('wireless.MT7999_1_2.etxbfencond', '0');
-          engine.commit();
-          engine.setAttenuation(90);
-          engine.restart(true);
-          setChapter(9);
-          setEvidence([]);
-          output = '已載入 Chapter 9 練習環境；原測試結果已清除。先觀察連線與 Log。';
-          break;
-        case 'ap-bf-on':
-          engine.updateAP({ txbf: true });
-          output = 'AP TxBF 已開啟，這是 Downlink 的發送端。';
-          break;
-        case 'ap-bf-off':
-          engine.updateAP({ txbf: false });
-          output = 'AP TxBF 已關閉，這是 Downlink 的發送端。';
-          break;
-      }
-    });
-    return { state: engine.state, output, before, after: observeLab(engine.state) };
+    let runId: string | undefined;
+    let exportReceipt: RvrExportReceipt | undefined;
+    let error: string | undefined;
+    try {
+      act(() => {
+        switch (action) {
+          case 'configure-ap-5g':
+            engine.updateAP({ band: '5', ssid: 'BN68', channel: 36 });
+            output = 'AP 已設為 5 GHz / BN68 / Channel 36。觀察 STA 是否需要遷移 Radio。';
+            break;
+          case 'restore-attenuation':
+            engine.setAttenuation(engine.state.attenuation.start);
+            output = `衰減器已回到 ${engine.state.attenuation.start} dB，觀察掃描與重新關聯。`;
+            break;
+          case 'set-attenuation-90':
+            engine.setAttenuation(90);
+            output = '衰減器設為 90 dB，請觀察 STA、MSP 與 Log。';
+            break;
+          case 'setup-rf-fault':
+            engine.reset('5');
+            engine.stage('wireless.MT7999_1_2.etxbfencond', '0');
+            engine.commit();
+            engine.setAttenuation(90);
+            engine.restart(true);
+            setChapter(9);
+            setEvidence([]);
+            output = '已載入 Chapter 9 練習環境；原測試結果已清除。先觀察連線與 Log。';
+            break;
+          case 'ap-bf-on':
+            engine.updateAP({ txbf: true });
+            output = 'AP TxBF 已開啟，這是 Downlink 的發送端。';
+            break;
+          case 'ap-bf-off':
+            engine.updateAP({ txbf: false });
+            output = 'AP TxBF 已關閉，這是 Downlink 的發送端。';
+            break;
+          case 'rvr-prepare-dl-tcp':
+            if (engine.state.msp.status === 'running')
+              throw new Error('請先停止目前量測，再準備新的 ON／OFF 比較。');
+            Object.assign(engine.state.msp.settings, { direction: 'DL', protocol: 'TCP' });
+            engine.log(
+              'Workflow',
+              'INFO',
+              'Prepare BF comparison: DL / TCP; existing sweep parameters and runs preserved.',
+            );
+            output = `已設定 TCP Downlink。沿用 ${engine.state.msp.settings.start}–${engine.state.msp.settings.end} dB、${engine.state.msp.settings.duration} 秒／點與目前 Seed；舊量測保留。可在 MSP 調整參數後開始 ON。`;
+            break;
+          case 'rvr-restore-start': {
+            if (engine.state.msp.status === 'running')
+              throw new Error('Sweep 尚在量測，請等完成或明確 Stop，再恢復起點。');
+            const on = engine.state.msp.runs.find((run) => run.id === comparison.onRunId);
+            if (comparison.onRunId && !on)
+              throw new Error('本工作流的 ON 量測已不存在，請重新開始 ON。');
+            const start = on?.settings.start ?? engine.state.msp.settings.start;
+            engine.setAttenuation(start);
+            output = `衰減器實際 readback 已回到 ${start} dB。${engine.state.sta.status === 'connected' ? '目前仍為 Connected。' : '請觀察掃描與重新關聯。'}MSP 不會自動啟動下一輪。`;
+            break;
+          }
+          case 'rvr-start-on':
+          case 'rvr-start-off': {
+            const check =
+              action === 'rvr-start-on'
+                ? validateRvrOnPreflight(engine.state)
+                : validateRvrOffPreflight(engine.state, comparison.onRunId);
+            if (!check.valid)
+              throw new Error(`${check.message}${check.hint ? `\n${check.hint}` : ''}`);
+            const previousId = engine.state.msp.activeRunId;
+            output = engine.startTest();
+            if (
+              engine.state.msp.status !== 'running' ||
+              !engine.state.msp.activeRunId ||
+              engine.state.msp.activeRunId === previousId
+            )
+              throw new Error(output);
+            runId = engine.state.msp.activeRunId;
+            output += `\n本次量測編號：${runId}。量測會依模擬時鐘逐點進行，請到下一步觀察完成狀態。`;
+            break;
+          }
+          case 'rvr-verify-pair': {
+            const check = validateRvrPair(engine.state, comparison.onRunId, comparison.offRunId);
+            if (!check.valid)
+              throw new Error(`${check.message}${check.hint ? `\n${check.hint}` : ''}`);
+            output = `${check.message}\n比較 ${comparison.onRunId}（ON）與 ${comparison.offRunId}（OFF）；使用各輪實際量測點，不補零、不偽造相同衰減格點。`;
+            break;
+          }
+          case 'rvr-export-csv':
+          case 'rvr-export-xlsx':
+          case 'rvr-export-report':
+          case 'rvr-export-log': {
+            if (!comparison.onRunId || !comparison.offRunId)
+              throw new Error('請先完成並驗證本次 ON／OFF 兩輪量測。');
+            const pair = selectRvrPairState(engine.state, comparison.onRunId, comparison.offRunId);
+            const [on, off] = pair.msp.runs;
+            const kind = action.slice('rvr-export-'.length) as RvrExportReceipt['kind'];
+            const filename = `wifi-qa-bf-on-off${kind === 'report' ? '-report.html' : kind === 'log' ? '-test.log' : `.${kind}`}`;
+            let data: string | Uint8Array;
+            let mime = 'text/plain;charset=utf-8';
+            if (kind === 'csv') {
+              data = '\uFEFF' + exportCsv(pair);
+              mime = 'text/csv;charset=utf-8';
+            } else if (kind === 'xlsx') {
+              data = exportXlsx(pair);
+              mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            } else if (kind === 'report') {
+              data = exportReport(pair);
+              mime = 'text/html;charset=utf-8';
+            } else {
+              data = [
+                'SIMULATED · Wi-Fi QA BF ON/OFF TCP Downlink comparison',
+                `ON=${on.id}; OFF=${off.id}; transmitter=AP; band=${on.metadata.band} GHz`,
+                `保留的現場 Log：${on.startedAt}–${off.endedAt} 模擬秒，可能包含同期間其他操作；較早記錄可能已超出保存上限。`,
+                JSON.stringify(
+                  {
+                    on: {
+                      id: on.id,
+                      settings: on.settings,
+                      metadata: on.metadata,
+                      points: on.points,
+                    },
+                    off: {
+                      id: off.id,
+                      settings: off.settings,
+                      metadata: off.metadata,
+                      points: off.points,
+                    },
+                  },
+                  null,
+                  2,
+                ),
+                ...pair.logs.map(
+                  (entry) => `${entry.time} [${entry.source}] ${entry.level}: ${entry.message}`,
+                ),
+              ].join('\n');
+            }
+            const bytes = download(filename, data, mime);
+            exportReceipt = {
+              kind,
+              onRunId: on.id,
+              offRunId: off.id,
+              pointCount: on.points.length + off.points.length,
+              generatedAt: engine.state.clock,
+              filename,
+              bytes,
+            };
+            output = `已產生並送出下載：${filename}\n${on.id}（ON）：${on.points.length} 點；${off.id}（OFF）：${off.points.length} 點。\n僅匯出本工作流的有效比較組；${bytes.toLocaleString()} bytes。`;
+            engine.log(
+              'Workflow',
+              'INFO',
+              `Export ${filename}: ${on.id} / ${off.id}; ${exportReceipt.pointCount} recorded points; ${bytes} bytes.`,
+            );
+            break;
+          }
+        }
+      });
+    } catch (failure) {
+      error = failure instanceof Error ? failure.message : String(failure);
+      output = error;
+      engine.log('Workflow', 'ERROR', error);
+      refresh();
+    }
+    return {
+      state: engine.state,
+      output,
+      before,
+      after: observeLab(engine.state),
+      runId,
+      exportReceipt,
+      error,
+    };
   }
   function settings(p: Partial<TestSettings>) {
     act(() => {
@@ -663,10 +808,12 @@ export default function App() {
     setEvidence([]);
     act(() => {
       if (n === 5) {
+        setWorkflowResetKey((key) => key + 1);
         engine.reset('6');
         engine.updateAP({ band: '5', ssid: 'BN68', channel: 36 });
       }
       if (n === 9) {
+        setWorkflowResetKey((key) => key + 1);
         engine.reset('5');
         engine.stage('wireless.MT7999_1_2.etxbfencond', '0');
         engine.commit();
@@ -674,6 +821,7 @@ export default function App() {
         engine.restart(true);
       }
       if (n === 10) {
+        setWorkflowResetKey((key) => key + 1);
         engine.reset('5');
         engine.state.network.serverRunning = false;
         engine.log(
@@ -683,10 +831,14 @@ export default function App() {
         );
       }
       if (n === 7) {
+        setWorkflowResetKey((key) => key + 1);
         engine.reset('5');
       }
       if (n === 8) {
-        if (engine.state.ap.band !== '5') engine.reset('5');
+        if (engine.state.ap.band !== '5') {
+          setWorkflowResetKey((key) => key + 1);
+          engine.reset('5');
+        }
         engine.updateAP({ txbf: false });
       }
     });
@@ -729,6 +881,25 @@ export default function App() {
           resetKey={workflowResetKey}
           onCommand={selectedCommand}
           onAction={workflowAction}
+          onSettings={settings}
+          onOpenMsp={() => {
+            setOpened((previous) => (previous.includes('msp') ? previous : [...previous, 'msp']));
+            setMinimized((previous) => previous.filter((tool) => tool !== 'msp'));
+            setSettingsOpen(true);
+          }}
+          renderComparisonChart={(comparison) => (
+            <Chart
+              state={{
+                ...state,
+                msp: {
+                  ...state.msp,
+                  runs: [comparison.onRunId, comparison.offRunId].flatMap(
+                    (id) => state.msp.runs.find((run) => run.id === id) || [],
+                  ),
+                },
+              }}
+            />
+          )}
         />
       );
     if (tool === 'att')
@@ -1413,7 +1584,7 @@ export default function App() {
           <strong>
             Wi-Fi QA <span>Virtual Lab</span>
           </strong>
-          <span className="version">v0.2</span>
+          <span className="version">v0.3</span>
         </div>
         <div className="header-right">
           <span className="simulation-tag">

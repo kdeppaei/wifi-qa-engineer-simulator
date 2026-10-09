@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { strFromU8, unzipSync } from 'fflate';
 import { LabEngine } from './lab';
+import { TerminalSession } from './terminal';
 import { exportCsv, exportReport, exportXlsx } from './export';
 
 function recordedLab() {
@@ -66,6 +67,80 @@ describe('recorded data exports', () => {
     const metadata = strFromU8(unzipSync(exportXlsx(engine.state))['xl/worksheets/sheet3.xml']);
     expect(metadata).toContain('BN68');
     expect(metadata).not.toContain('later AP');
+  });
+
+  it('finds renamed APCLI sections independently in configured and runtime BF snapshots', () => {
+    const engine = new LabEngine();
+    engine.reset('5');
+    const terminal = new TerminalSession(engine, 'linux');
+    expect(
+      terminal.execute('uci rename wireless.stamld0=qa_client\nuci commit wireless\nwifi restart'),
+    ).toContain('Wireless subsystem restarting');
+    engine.tick(8);
+    expect(engine.state.sta.status).toBe('connected');
+    expect(
+      terminal.execute(
+        "uci set wireless.qa_client.device='MT7999_1_3'\nuci set wireless.MT7999_1_3.etxbfencond=0",
+      ),
+    ).toBe('');
+    expect(engine.startTest({ end: 5, duration: 1, step: 5 })).toContain('Started');
+    engine.tick(2);
+    const run = engine.state.msp.runs[0];
+    expect(run.metadata.runtime['wireless.stamld0.device']).toBeUndefined();
+    expect(run.metadata.runtime['wireless.qa_client.device']).toBe('MT7999_1_2');
+    const first = exportCsv(engine.state).split('\r\n')[1].split(',');
+    expect(first[8]).toBe('"0"');
+    expect(first[9]).toBe('"3"');
+    const measurements = strFromU8(unzipSync(exportXlsx(engine.state))['xl/worksheets/sheet2.xml']);
+    expect(measurements).toMatch(/<c r="I2"[^>]*>.*?<t[^>]*>0<\/t>/);
+    expect(measurements).toMatch(/<c r="J2"[^>]*>.*?<t[^>]*>3<\/t>/);
+    expect(exportReport(engine.state)).toContain('wireless.qa_client.device');
+  });
+
+  it('matches the engine active STA when another STA advertises the same interface first', () => {
+    const engine = new LabEngine();
+    engine.reset('5');
+    const terminal = new TerminalSession(engine, 'linux');
+    expect(
+      terminal.execute(
+        [
+          'uci rename wireless.stamld0=primary_temp',
+          'uci commit wireless',
+          'uci set wireless.secondary=wifi-iface',
+          'uci set wireless.secondary.mode=sta',
+          'uci set wireless.secondary.ifname=stamld0',
+          'uci set wireless.secondary.device=MT7999_1_3',
+          'uci set wireless.secondary.ssid=BN68_6G',
+          'uci set wireless.MT7999_1_3.etxbfencond=0',
+          'uci commit wireless',
+          'uci rename wireless.primary_temp=stamld0',
+          'uci commit wireless',
+          'wifi restart',
+        ].join('\n'),
+      ),
+    ).toContain('Wireless subsystem restarting');
+    engine.tick(8);
+    expect(engine.state.sta.status).toBe('connected');
+    expect(terminal.execute('iw dev stamld0 link')).toContain('freq: 5180');
+    expect(engine.startTest({ direction: 'UL', end: 5, duration: 1, step: 5 })).toContain(
+      'Started',
+    );
+    engine.tick(2);
+    const run = engine.state.msp.runs[0];
+    const keys = Object.keys(run.metadata.runtime);
+    expect(keys.indexOf('wireless.secondary.mode')).toBeLessThan(
+      keys.indexOf('wireless.stamld0.mode'),
+    );
+    expect(run.bf).toBe(true);
+    expect(run.points.every((point) => point.bf)).toBe(true);
+    const first = exportCsv(engine.state).split('\r\n')[1].split(',');
+    expect(first[4]).toBe('"UL"');
+    expect(first[6]).toBe('"ON"');
+    expect(first[8]).toBe('"3"');
+    expect(first[9]).toBe('"3"');
+    const measurements = strFromU8(unzipSync(exportXlsx(engine.state))['xl/worksheets/sheet2.xml']);
+    expect(measurements).toMatch(/<c r="I2"[^>]*><is><t[^>]*>3<\/t><\/is><\/c>/);
+    expect(measurements).toMatch(/<c r="J2"[^>]*><is><t[^>]*>3<\/t><\/is><\/c>/);
   });
 
   it('escapes custom labels and logs in all formats and preserves actual SVG point values', () => {
