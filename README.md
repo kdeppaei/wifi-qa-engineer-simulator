@@ -12,6 +12,14 @@
 
 [RvR Excel 工具驗證紀錄](docs/rvr-excel-validation.md)
 
+## 公開下載與 Fork
+
+[下載 RvR Excel 工具 v1.1](https://github.com/kdeppaei/wifi-qa-engineer-simulator/releases/tag/rvr-excel-v1.1)：在 Assets 下載 `rvr-excel-tool.html`，用 Chrome／Edge 開啟即可離線使用；`rvr-excel-template.xlsx` 可直接在 Excel 填入資料。相同版本也附上 Wi-Fi QA 模擬器 `wifi-qa-lab.html`。
+
+使用 RvR 工具時，貼上 MSP 矩陣，核對擷取的 dB／Throughput 欄；比較 TxBF 時選 ON／OFF 模式，分別貼入兩組資料，再下載 Excel。欄名、起始行與欄號皆可修改。公開下載不包含使用者提供的原始 PDF、試算表或量測資料。
+
+要修改程式，按儲存庫右上角 **Fork**，再將自己的 Fork clone 到本機，依下方啟動步驟操作。RvR 工具程式位於 `src/rvrExcel/`，入口為 `rvr-excel.html`；Wi-Fi QA 模擬器與 RvR 工具共用此儲存庫，但各自有獨立入口。
+
 ## 啟動
 
 需要 Node.js 22 或更新版本，以及 pnpm 10.26+（建議 pnpm 11）。
