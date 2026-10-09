@@ -523,6 +523,53 @@ small {
   margin-left: auto;
   font-size: 8px;
 }
+.terminal-foot button {
+  font-size: 10px;
+  padding: 2px 5px;
+  white-space: nowrap;
+}
+.connection-help {
+  margin: -8px 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 12px;
+}
+.connection-help-heading,
+.connection-recovery-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.connection-help-heading > span {
+  flex: 1;
+}
+.connection-help p {
+  line-height: 1.7;
+}
+.connection-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+.connection-checks > div {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.connection-checks [data-ok='false'] > strong {
+  color: #ffb866;
+}
+.connection-checks [data-ok='true'] > strong {
+  color: #65ddb1;
+}
+.connection-checks span {
+  overflow-wrap: anywhere;
+}
 .terminal-foot .led {
   width: 4px;
   height: 4px;

@@ -32,6 +32,14 @@ Playwright 會啟動本機 dev server。已有相同版本 Chromium 時可省略
 
 ## 指令工作流：邊操作邊驗證
 
+v0.3.1 加入「檢查連線」。如果恢復衰減起點後仍持續出現 `NETWORK-NOT-FOUND`，展開檢查可核對 AP 電源／Channel、STA Runtime Radio／SSID、RF Readback、認證／PMF、Pending 與未載入配置。檢查只在你展開後顯示原因，保留故障練習的觀察過程。
+
+「衰減設為 0 dB」使用實際 0 dB，不受先前保存的起點影響。「依目前 AP 同步 STA 並重連」會明確對齊 STA Radio、SSID、認證與 PMF，提交、載入 Committed 並重啟 Wi-Fi；設定衰減為 0 dB，但保留 AP、BF、Sweep、原量測與 Log。等待 restarting → scanning → associating → connected 後再用 link／Ping 驗證。若有 Pending、MSP 正在量測或 AP 條件無效，先處理提示的條件；操作不會替你清除 Pending、開啟 AP 或重跑測試。
+
+VT 的「暫停 Serial 訊息」只暫停非同步訊息顯示，模擬與 Log 仍持續，手打／快捷指令仍可執行。按「繼續 Serial 訊息」接收後續事件，暫停期間的證據可用 `logread` 查詢。新訊息只捲動終端內容，不會強制捲動整個工作台；向上瀏覽歷史時停止追隨底部。
+
+外部 Chrome／Edge 會沿用自己保存的現場，與 Codex 內建瀏覽器分開。更新 HTML 後重新載入並確認左上角版本為 v0.3.1；刷新本身不會清除故障或量測。
+
 按工作台的「指令工作流」開啟右側面板。選擇工作流不會自動重置 AP、STA、衰減器或量測。每一步提供原因、觀察重點、可編輯的指令與預期結果；可以保留目前故障現場，照自己的速度操作。
 
 | 工作流                         | 練習內容                                                                           |

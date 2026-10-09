@@ -16,6 +16,69 @@ const runAt = (engine: LabEngine, db = 40, partial: Partial<TestSettings> = {}) 
 };
 
 describe('shared Wi-Fi lab state machine', () => {
+  it('diagnoses a saved AP/STA mismatch and recovers without discarding evidence or claiming instant connection', () => {
+    const original = make('6');
+    runAt(original, 0);
+    original.stage('wireless.MT7999_1_2.etxbfencond', '0');
+    original.commit();
+    original.updateAP({
+      band: '5',
+      channel: 36,
+      ssid: 'Recovery AP',
+      security: 'WPA2',
+      password: 'recovery-secret',
+    });
+    original.setAttenuation(90);
+    original.state.attenuation.start = 90;
+    original.state.clock = 2700;
+    const engine = new LabEngine(JSON.parse(original.exportState()));
+    engine.tick(12);
+    const checks = Object.fromEntries(
+      engine.connectionDiagnostics().map((check) => [check.id, check]),
+    );
+    expect(checks.band.ok).toBe(false);
+    expect(checks.rf.ok).toBe(false);
+    expect(checks.auth.ok).toBe(false);
+    expect(checks.runtime.ok).toBe(false);
+    expect(JSON.stringify(checks)).not.toContain('recovery-secret');
+    engine.setAttenuation(0);
+    engine.tick(8);
+    expect(engine.state.sta.status).not.toBe('connected');
+    const runs = structuredClone(engine.state.msp.runs);
+    const logs = engine.state.logs.map((log) => log.id);
+    const ap = { ...engine.state.ap };
+    expect(engine.recoverStationToAP()).toContain('同步 STA');
+    expect(engine.state.sta.status).toBe('restarting');
+    expect(engine.state.attenuation).toEqual({ db: 0, start: 90 });
+    engine.tick(2);
+    expect(engine.state.sta.status).toBe('scanning');
+    engine.tick(2);
+    expect(engine.state.sta.status).toBe('associating');
+    engine.tick(2);
+    expect(engine.state.sta.status).toBe('connected');
+    expect(engine.state.config.runtime['wireless.MT7999_1_2.etxbfencond']).toBe('0');
+    expect(engine.state.ap).toEqual(ap);
+    expect(engine.state.msp.runs).toEqual(runs);
+    expect(logs.every((id) => engine.state.logs.some((log) => log.id === id))).toBe(true);
+    expect(engine.connectionDiagnostics().every((check) => check.ok)).toBe(true);
+  });
+
+  it.each(['pending', 'running', 'power', 'channel', '6g-security'] as const)(
+    'blocks unsafe recovery for %s before changing any state',
+    (condition) => {
+      const engine = make('6');
+      if (condition === 'pending') engine.stage('wireless.MT7999_1_3.etxbfencond', '0');
+      if (condition === 'running') engine.startTest();
+      if (condition === 'power') engine.updateAP({ power: false });
+      if (condition === 'channel') engine.updateAP({ channel: 36 });
+      if (condition === '6g-security') engine.updateAP({ security: 'WPA2' });
+      const before = engine.exportState();
+      expect(engine.stationRecoveryBlocker()).not.toBeNull();
+      expect(() => engine.recoverStationToAP()).toThrow();
+      expect(engine.exportState()).toBe(before);
+    },
+  );
+
   it('90 dB drops the STA, breaks ping and MSP, and preserves partial evidence', () => {
     const engine = make();
     engine.startTest({ end: 60, duration: 1 });

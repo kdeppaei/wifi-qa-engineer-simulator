@@ -1,4 +1,4 @@
-# v0.3 驗證紀錄
+# v0.3.1 驗證紀錄
 
 日期：2026-10-09。所有數值與設備均為模擬；本紀錄不是硬體 Wi-Fi QA 測試報告。
 
@@ -6,8 +6,8 @@
 | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | TypeScript strict + Vite production build + standalone package | 通過                                                                                                                  |
 | ESLint `--max-warnings 0`                                      | 通過，零警告                                                                                                          |
-| Vitest                                                         | 93 個測試通過：Lab 20、Terminal 16、Exporter 6、Storage 6、Scenario 14、Workflow 13、RvrWorkflow 18                   |
-| Playwright Chromium                                            | 最終 14 個完整瀏覽器案例全數通過，零 pageerror／JavaScript 例外；包含最新 build 與 standalone                         |
+| Vitest                                                         | 99 個測試通過：Lab 26、Terminal 16、Exporter 6、Storage 6、Scenario 14、Workflow 13、RvrWorkflow 18                   |
+| Playwright Chromium                                            | 16 個瀏覽器案例驗證通過，零 pageerror／JavaScript 例外；包含單檔離線連線恢復與原有 14 個案例                          |
 | XLSX native chart                                              | v0.3 瀏覽器下載由 openpyxl 核對四工作表、2 個 ScatterChart Series、原始點與 Metadata；格式先前另經 Artifact Tool 讀取 |
 | 視覺 QA                                                        | 1440×1000 截圖已檢查：四工具、主要控制、即時狀態及故障 Log 可見                                                       |
 
@@ -27,6 +27,12 @@
 12. 本輪 ON 在 90 dB 中斷時，不能借用先前完成的 ON 通過；恢復 RF 後仍保留部分點與中斷狀態，明確載入 RF 故障場景會清除 RvR 綁定。
 13. Chapter 9 與自由實驗重置清除比較進度／Run ID 綁定，防止新現場重用編號後誤認為原比較組。
 14. `file://` 封鎖 HTTP／HTTPS 後，可完成指定 ON／OFF DL 比較，下載含兩個原生 Series 的 Excel，核對低訊號下的 BF 差異，並在重新整理後恢復完成記錄。
+15. `file://` 保存中的 2700 秒故障現場：AP／STA 頻段、SSID、認證與 Runtime 不匹配時，單改衰減仍失敗；明確同步後經 restarting／scanning／associating 恢復 5180 MHz 關聯與 Ping，原 Run、BF、AP 與 Log 保留，再載入仍正常。暫停 Serial 顯示時，Log 持續保存，手動指令可用。
+16. Pending 存在時同步按鈕阻擋；反覆自動重連的 Serial 訊息不會捲動外層工作台，也不會改寫 Pending。
+
+v0.3.1 的新離線案例首次執行因測試對 AP Band 標籤的匹配過嚴而停止；修正測試選取方式後，兩個新案例重跑全數通過。原有 14 案例亦在本版 build／standalone 下全數通過。
+
+![連線檢查與保留證據的恢復](connection-recovery-preview.png)
 
 v0.3 實際瀏覽器下載的讀取器檢查：ON／OFF 各 3 點，XLSX Measurements 與 CSV 各 7 列（含標題），HTML 有 6 個實際 SVG 點。原生圖表的數值快取、L／R 儲存格引用及型別逐點符合證據 Log 中的兩輪資料；AP、全部測試參數、三層設定、網路、Firmware／Model 與頻寬 Metadata 逐項相符，沒有其他 Run 混入。
 

@@ -238,7 +238,9 @@ function TerminalView({
   ]);
   const [input, setInput] = useState('');
   const [index, setIndex] = useState(-1);
-  const end = useRef<HTMLDivElement>(null);
+  const [serialPaused, setSerialPaused] = useState(false);
+  const scroll = useRef<HTMLDivElement>(null);
+  const follow = useRef(true);
   const field = useRef<HTMLTextAreaElement>(null);
   const seen = useRef(engine.state.logs.at(-1)?.id);
   const insertedContext = useRef<CommandContext | undefined>(undefined);
@@ -249,7 +251,7 @@ function TerminalView({
         : `root@OpenWrt:${session.cwd === '/root' ? '~' : session.cwd}#`
       : `${session.cwd.replaceAll('/', '\\')}>`;
   useEffect(() => {
-    end.current?.scrollIntoView({ block: 'nearest' });
+    if (follow.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
   }, [entries]);
   useEffect(() => {
     if (!live?.length) return;
@@ -266,7 +268,7 @@ function TerminalView({
         ),
     );
     seen.current = live.at(-1)?.id;
-    if (recent.length)
+    if (recent.length && !serialPaused)
       setEntries((e) => [
         ...e.slice(-160),
         { output: recent.map((l) => `[${l.time}] ${l.source}: ${l.message}`).join('\n') },
@@ -274,6 +276,7 @@ function TerminalView({
   }, [live?.at(-1)?.id]);
   function submit(value = input, context?: CommandContext) {
     if (!value.trim()) return;
+    follow.current = true;
     const before = observeLab(engine.state);
     const at = engine.state.clock;
     const output = session.execute(value);
@@ -308,14 +311,20 @@ function TerminalView({
       className={`terminal ${session === linux ? 'linux' : 'windows'}`}
       onClick={() => field.current?.focus()}
     >
-      <div className="terminal-scroll">
+      <div
+        className="terminal-scroll"
+        ref={scroll}
+        onScroll={() => {
+          const node = scroll.current;
+          if (node) follow.current = node.scrollHeight - node.scrollTop - node.clientHeight < 32;
+        }}
+      >
         {entries.map((e, i) => (
           <div className="terminal-entry" key={i}>
             {e.command && <pre className="command-line">{e.command}</pre>}
             {e.output && <pre>{e.output}</pre>}
           </div>
         ))}
-        <div ref={end} />
       </div>
       <div className="terminal-input">
         <span>{prompt}</span>
@@ -371,7 +380,19 @@ function TerminalView({
       <div className="terminal-foot">
         <span className="led green" />
         {session === linux ? '115200 baud · Serial 控制通道' : 'QA Workstation · Ethernet'}
-        <span>Enter 執行 · Shift+Enter 多行</span>
+        {session === linux && (
+          <button
+            type="button"
+            aria-pressed={serialPaused}
+            onClick={(event) => {
+              event.stopPropagation();
+              setSerialPaused((paused) => !paused);
+            }}
+          >
+            {serialPaused ? '繼續 Serial 訊息' : '暫停 Serial 訊息'}
+          </button>
+        )}
+        <span>{serialPaused ? '僅暫停顯示，Log 持續保存' : 'Enter 執行 · Shift+Enter 多行'}</span>
       </div>
     </div>
   );
@@ -511,6 +532,7 @@ export default function App() {
   const [theme, setTheme] = useState('dark');
   const [script, setScript] = useState(sampleScript);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [connectionOpen, setConnectionOpen] = useState(false);
   const [startMenu, setStartMenu] = useState(false);
   const [execution, setExecution] = useState<CommandExecution | null>(null);
   const [workflowResetKey, setWorkflowResetKey] = useState(0);
@@ -1584,7 +1606,7 @@ export default function App() {
           <strong>
             Wi-Fi QA <span>Virtual Lab</span>
           </strong>
-          <span className="version">v0.3</span>
+          <span className="version">v0.3.1</span>
         </div>
         <div className="header-right">
           <span className="simulation-tag">
@@ -1762,6 +1784,78 @@ export default function App() {
             <ChevronRight size={13} />
           </button>
         </div>
+        <section className="connection-help" aria-label="連線診斷與恢復">
+          <div className="connection-help-heading">
+            <span>
+              {connected
+                ? 'STA 已連線；可檢查目前連線條件。'
+                : 'STA 尚未連線；恢復起點後仍失敗時，請核對 AP 與 STA 設定。'}
+            </span>
+            <button
+              aria-expanded={connectionOpen}
+              onClick={() => setConnectionOpen((open) => !open)}
+            >
+              {connectionOpen ? '收起連線檢查' : '檢查連線'}
+            </button>
+          </div>
+          {connectionOpen && (
+            <div data-testid="connection-diagnostics">
+              <p>
+                目前階段：{state.sta.status} · {state.sta.reason}
+                。重新整理會沿用本瀏覽器已保存的現場。
+              </p>
+              <div className="connection-checks">
+                {engine.connectionDiagnostics().map((check) => (
+                  <div
+                    key={check.id}
+                    data-testid={`connection-check-${check.id}`}
+                    data-ok={check.ok}
+                  >
+                    <strong>
+                      {check.ok ? '✓' : '!'} {check.label}
+                    </strong>
+                    <span>{check.detail}</span>
+                  </div>
+                ))}
+              </div>
+              <p>
+                同步操作會將 STA 的 Radio、SSID、認證與 PMF 對齊目前 AP，提交並重啟 Wi-Fi，衰減設為
+                0 dB。BF、Sweep、原量測及 Log 保留。
+              </p>
+              <div className="connection-recovery-actions">
+                <button
+                  disabled={state.msp.status === 'running'}
+                  onClick={() => act(() => engine.setAttenuation(0))}
+                >
+                  衰減設為 0 dB
+                </button>
+                <button
+                  disabled={!!engine.stationRecoveryBlocker()}
+                  onClick={() => {
+                    try {
+                      let message = '';
+                      act(() => {
+                        message = engine.recoverStationToAP();
+                      });
+                      notify(message);
+                    } catch (error) {
+                      notify(error instanceof Error ? error.message : String(error));
+                    }
+                  }}
+                >
+                  依目前 AP 同步 STA 並重連
+                </button>
+                <button onClick={() => open('ap')}>檢查 AP 設定</button>
+              </div>
+              {engine.stationRecoveryBlocker() && (
+                <p role="status">{engine.stationRecoveryBlocker()}</p>
+              )}
+              <p className="subtle-note">
+                資料保存在各瀏覽器中。這裡保留故障現場；「重置實驗室」才會清除結果並回到初始環境。
+              </p>
+            </div>
+          )}
+        </section>
         <div className="workspace-grid">
           {(['tera', 'cmd', 'att', 'msp'] as Tool[]).map((t) =>
             opened.includes(t) && !minimized.includes(t) ? (

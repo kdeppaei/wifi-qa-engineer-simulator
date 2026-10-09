@@ -3,6 +3,12 @@ export type Band = '2.4' | '5' | '6';
 export type Direction = 'DL' | 'UL';
 export type ConnectionStatus =
   'connected' | 'scanning' | 'associating' | 'disconnected' | 'restarting';
+export interface ConnectionCheck {
+  id: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+}
 export interface APConfig {
   power: boolean;
   band: Band;
@@ -339,8 +345,7 @@ export class LabEngine {
     return JSON.stringify(this.state, null, 2);
   }
 
-  private staPrefix(): string {
-    const runtime = this.state.config.runtime;
+  private staPrefix(runtime = this.state.config.runtime): string {
     const sections = Object.keys(runtime)
       .filter(
         (key) => key.endsWith('.mode') && key.startsWith('wireless.') && runtime[key] === 'sta',
@@ -438,6 +443,122 @@ export class LabEngine {
       return 'AUTH-REJECT: 6 GHz training profile requires WPA3';
     if (this.staValue('key') !== ap.password) return 'AUTH-REJECT: SAE/PSK authentication failed';
     return null;
+  }
+
+  connectionDiagnostics(): ConnectionCheck[] {
+    const { ap, config, attenuation } = this.state;
+    const encryption = this.staValue('encryption');
+    const radio = this.radio();
+    const pending = Object.keys(config.staged).length;
+    const unapplied = [
+      ...new Set([...Object.keys(config.committed), ...Object.keys(config.runtime)]),
+    ].filter((key) => config.committed[key] !== config.runtime[key]).length;
+    return [
+      {
+        id: 'power',
+        label: 'AP 電源',
+        ok: ap.power,
+        detail: ap.power ? '已開啟' : '請在 AP Configuration 開啟電源',
+      },
+      {
+        id: 'channel',
+        label: 'AP Channel',
+        ok: this.validAPChannel() && (ap.band !== '6' || ap.security === 'WPA3'),
+        detail: `${ap.band} GHz / CH ${ap.channel} / ${ap.security}；6 GHz 須使用 WPA3 與有效 Channel`,
+      },
+      {
+        id: 'enabled',
+        label: 'STA / Radio',
+        ok:
+          this.staValue('mode') === 'sta' &&
+          this.staValue('disabled') !== '1' &&
+          config.runtime[`wireless.${radio}.disabled`] !== '1',
+        detail: `${this.staPrefix()} · ${radio || '尚未指定 Radio'}`,
+      },
+      {
+        id: 'band',
+        label: '頻段匹配',
+        ok: this.runtimeBand() === ap.band,
+        detail: `STA Runtime ${this.runtimeBand() || '未知'} GHz → AP ${ap.band} GHz`,
+      },
+      {
+        id: 'ssid',
+        label: 'SSID 匹配',
+        ok: this.staValue('ssid') === ap.ssid,
+        detail: `STA ${this.staValue('ssid') || '未設定'} → AP ${ap.ssid}`,
+      },
+      {
+        id: 'rf',
+        label: 'RF Readback',
+        ok: this.rawSignal() > -95,
+        detail: `${attenuation.db} dB · ${this.rawSignal()} dBm；起點按鈕目前會恢復到 ${attenuation.start} dB`,
+      },
+      {
+        id: 'auth',
+        label: '認證 / PMF',
+        ok:
+          (ap.security === 'WPA3' ? encryption.includes('sae') : encryption.includes('psk2')) &&
+          this.staValue('key') === ap.password &&
+          (!(ap.security === 'WPA3' || ap.band === '6') || this.staValue('ieee80211w') === '2'),
+        detail: `${encryption || '未設定'} / PMF ${this.staValue('ieee80211w') || '未設定'}；核對 AP 認證，金鑰不顯示`,
+      },
+      {
+        id: 'pending',
+        label: 'Pending',
+        ok: pending === 0,
+        detail: `${pending} 項尚未提交；先處理自己的修改，再使用同步操作`,
+      },
+      {
+        id: 'runtime',
+        label: 'Committed → Runtime',
+        ok: unapplied === 0,
+        detail: `${unapplied} 項尚未載入 Driver；同步操作會重新初始化 Wi-Fi`,
+      },
+    ];
+  }
+
+  stationRecoveryBlocker(): string | null {
+    if (this.state.msp.status === 'running') return '請先停止 MSP 量測，再同步 STA。';
+    if (Object.keys(this.state.config.staged).length)
+      return '仍有 Pending 修改；先提交或處理後再同步，避免混入其他設定。';
+    if (
+      !this.state.ap.power ||
+      !this.validAPChannel() ||
+      (this.state.ap.band === '6' && this.state.ap.security !== 'WPA3')
+    )
+      return '請先在 AP Configuration 開啟電源並設定有效 Channel／認證。';
+    return null;
+  }
+
+  recoverStationToAP(): string {
+    const blocker = this.stationRecoveryBlocker();
+    if (blocker) throw new Error(blocker);
+    const { ap } = this.state;
+    const prefix = this.staPrefix(this.state.config.committed);
+    const radio = radioForBand(ap.band);
+    this.log(
+      'LAB',
+      'INFO',
+      `Operator requested STA recovery to current AP ${ap.ssid} / ${ap.band} GHz; existing evidence retained.`,
+    );
+    this.setAttenuation(0);
+    for (const [key, value] of Object.entries({
+      [prefix]: 'wifi-iface',
+      [`${prefix}.mode`]: 'sta',
+      [`${prefix}.ifname`]: 'stamld0',
+      [`${prefix}.network`]: 'lan',
+      [`${prefix}.device`]: radio,
+      [`${prefix}.ssid`]: ap.ssid,
+      [`${prefix}.encryption`]: ap.security === 'WPA3' ? 'sae' : 'psk2',
+      [`${prefix}.key`]: ap.password,
+      [`${prefix}.ieee80211w`]: '2',
+      [`${prefix}.disabled`]: '0',
+      [`wireless.${radio}.disabled`]: '0',
+    }))
+      this.stage(key, value);
+    this.commit('wireless');
+    this.restart();
+    return `已依 AP ${ap.ssid} / ${ap.band} GHz 同步 STA 並設定 0 dB。請觀察 restarting → scanning → associating → connected；原量測與 Log 保留，MSP 不會自動重跑。`;
   }
 
   private ipv4(): string {
