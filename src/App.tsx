@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import type { ReactNode, PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState } from 'react';
+import type { ReactNode, Ref, PointerEvent as ReactPointerEvent } from 'react';
 import {
   Monitor,
   Terminal,
@@ -32,6 +32,7 @@ import {
   Cable,
   Server,
   ChevronDown,
+  ListChecks,
 } from 'lucide-react';
 import { LabEngine, radioForBand } from './engine/lab';
 import type { LabState, Band, TestSettings } from './engine/lab';
@@ -39,9 +40,22 @@ import { TerminalSession, supportedCommands, windowsCommands } from './engine/te
 import { exportCsv, exportXlsx, exportReport } from './engine/export';
 import { observeCommand, assessChapter } from './engine/scenario';
 import { parseSnapshot } from './engine/storage';
+import WorkflowView, { observeLab } from './WorkflowView';
+import type { CommandContext, CommandExecution, ActionExecution } from './WorkflowView';
+import type { WorkflowActionId } from './engine/workflow';
 
 const STORAGE = 'wifi-qa-lab-v1';
-type Tool = 'tera' | 'cmd' | 'att' | 'msp' | 'ap' | 'topology' | 'learning' | 'script' | 'report';
+type Tool =
+  | 'tera'
+  | 'cmd'
+  | 'att'
+  | 'msp'
+  | 'ap'
+  | 'topology'
+  | 'learning'
+  | 'script'
+  | 'report'
+  | 'workflow';
 function loadSaved() {
   try {
     return parseSnapshot(JSON.parse(localStorage.getItem(STORAGE) || 'null'));
@@ -63,6 +77,7 @@ const names: Record<Tool, string> = {
   learning: 'Learning Center',
   script: 'Script Editor',
   report: 'Result Analyzer',
+  workflow: '指令工作流',
 };
 const icons: Record<Tool, typeof Monitor> = {
   tera: Terminal,
@@ -74,6 +89,7 @@ const icons: Record<Tool, typeof Monitor> = {
   learning: BookOpen,
   script: FileCode2,
   report: Download,
+  workflow: ListChecks,
 };
 const scenarios = [
   ['自由實驗', '觀察不同工具如何共同反映設備狀態。'],
@@ -184,16 +200,25 @@ function Panel({
   );
 }
 
+interface TerminalController {
+  insert: (value: string, context?: CommandContext) => void;
+  execute: (value: string, context?: CommandContext) => void;
+}
+let commandSequence = 0;
 function TerminalView({
   session,
   refresh,
   onEvidence,
   live,
+  controller,
+  onExecution,
 }: {
   session: TerminalSession;
   refresh: () => void;
   onEvidence: (s: string, output: string, os: 'linux' | 'windows') => void;
   live?: LabState['logs'];
+  controller: Ref<TerminalController>;
+  onExecution: (result: CommandExecution) => void;
 }) {
   const [entries, setEntries] = useState<{ command?: string; output: string }[]>(() => [
     {
@@ -208,6 +233,7 @@ function TerminalView({
   const end = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const seen = useRef(engine.state.logs.at(-1)?.id);
+  const insertedContext = useRef<CommandContext | undefined>(undefined);
   const prompt =
     session === linux
       ? session.mode === 'wpa'
@@ -238,16 +264,37 @@ function TerminalView({
         { output: recent.map((l) => `[${l.time}] ${l.source}: ${l.message}`).join('\n') },
       ]);
   }, [live?.at(-1)?.id]);
-  function submit(value = input) {
+  function submit(value = input, context?: CommandContext) {
     if (!value.trim()) return;
+    const before = observeLab(engine.state);
+    const at = engine.state.clock;
     const output = session.execute(value);
     onEvidence(value, output, session.os);
+    onExecution({
+      id: ++commandSequence,
+      command: value,
+      output,
+      os: session.os,
+      at,
+      before,
+      after: observeLab(engine.state),
+      context,
+    });
     if (session.clearRequested) setEntries([]);
     else setEntries((e) => [...e.slice(-160), { command: `${prompt} ${value}`, output }]);
     setInput('');
     setIndex(-1);
+    insertedContext.current = undefined;
     refresh();
   }
+  useImperativeHandle(controller, () => ({
+    insert: (value, context) => {
+      setInput(value);
+      insertedContext.current = context;
+      field.current?.focus();
+    },
+    execute: (value, context) => submit(value, context),
+  }));
   return (
     <div
       className={`terminal ${session === linux ? 'linux' : 'windows'}`}
@@ -274,7 +321,7 @@ function TerminalView({
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              submit();
+              submit(input, insertedContext.current);
             }
             if (e.key === 'ArrowUp' && !e.shiftKey) {
               e.preventDefault();
@@ -298,13 +345,18 @@ function TerminalView({
             if (e.ctrlKey && e.key === 'c') {
               e.preventDefault();
               setInput('');
+              insertedContext.current = undefined;
               session.mode = 'shell';
               setEntries((es) => [...es, { output: '^C' }]);
               refresh();
             }
           }}
         />
-        <button title="執行指令" aria-label="執行指令" onClick={() => submit()}>
+        <button
+          title="執行指令"
+          aria-label="執行指令"
+          onClick={() => submit(input, insertedContext.current)}
+        >
           <ChevronRight size={16} />
         </button>
       </div>
@@ -452,6 +504,16 @@ export default function App() {
   const [script, setScript] = useState(sampleScript);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [startMenu, setStartMenu] = useState(false);
+  const [execution, setExecution] = useState<CommandExecution | null>(null);
+  const [workflowResetKey, setWorkflowResetKey] = useState(0);
+  const teraController = useRef<TerminalController>(null);
+  const cmdController = useRef<TerminalController>(null);
+  const [pendingCommand, setPendingCommand] = useState<{
+    command: string;
+    os: 'linux' | 'windows';
+    execute: boolean;
+    context?: CommandContext;
+  } | null>(null);
   const file = useRef<HTMLInputElement>(null);
   const refs = useRef({ chapter, evidence });
   refs.current = { chapter, evidence };
@@ -509,6 +571,69 @@ export default function App() {
   function record(s: string, output?: string, os?: 'linux' | 'windows') {
     const tags = output !== undefined && os ? observeCommand(s, output, os) : [];
     setEvidence((e) => [...e, `command:${s}`, ...tags.map((tag) => `evidence:${tag}`)].slice(-200));
+  }
+  function selectedCommand(
+    command: string,
+    os: 'linux' | 'windows',
+    execute: boolean,
+    context?: CommandContext,
+  ) {
+    const tool = os === 'linux' ? 'tera' : 'cmd';
+    setOpened((previous) => (previous.includes(tool) ? previous : [...previous, tool]));
+    setMinimized((previous) => previous.filter((item) => item !== tool));
+    // Keep the guide visible while the real terminal receives the command.
+    setFocus('workflow');
+    setPendingCommand({ command, os, execute, context });
+  }
+  useEffect(() => {
+    if (!pendingCommand) return;
+    const control = pendingCommand.os === 'linux' ? teraController.current : cmdController.current;
+    if (!control) return;
+    if (pendingCommand.execute) control.execute(pendingCommand.command, pendingCommand.context);
+    else {
+      control.insert(pendingCommand.command, pendingCommand.context);
+      notify(`指令已送入 ${pendingCommand.os === 'linux' ? 'VT' : 'CMD'}，按 Enter 執行。`);
+    }
+    setPendingCommand(null);
+  }, [pendingCommand, opened, minimized]);
+  function workflowAction(action: WorkflowActionId): ActionExecution {
+    const before = observeLab(engine.state);
+    let output = '';
+    act(() => {
+      switch (action) {
+        case 'configure-ap-5g':
+          engine.updateAP({ band: '5', ssid: 'BN68', channel: 36 });
+          output = 'AP 已設為 5 GHz / BN68 / Channel 36。觀察 STA 是否需要遷移 Radio。';
+          break;
+        case 'restore-attenuation':
+          engine.setAttenuation(engine.state.attenuation.start);
+          output = `衰減器已回到 ${engine.state.attenuation.start} dB，觀察掃描與重新關聯。`;
+          break;
+        case 'set-attenuation-90':
+          engine.setAttenuation(90);
+          output = '衰減器設為 90 dB，請觀察 STA、MSP 與 Log。';
+          break;
+        case 'setup-rf-fault':
+          engine.reset('5');
+          engine.stage('wireless.MT7999_1_2.etxbfencond', '0');
+          engine.commit();
+          engine.setAttenuation(90);
+          engine.restart(true);
+          setChapter(9);
+          setEvidence([]);
+          output = '已載入 Chapter 9 練習環境；原測試結果已清除。先觀察連線與 Log。';
+          break;
+        case 'ap-bf-on':
+          engine.updateAP({ txbf: true });
+          output = 'AP TxBF 已開啟，這是 Downlink 的發送端。';
+          break;
+        case 'ap-bf-off':
+          engine.updateAP({ txbf: false });
+          output = 'AP TxBF 已關閉，這是 Downlink 的發送端。';
+          break;
+      }
+    });
+    return { state: engine.state, output, before, after: observeLab(engine.state) };
   }
   function settings(p: Partial<TestSettings>) {
     act(() => {
@@ -591,6 +716,19 @@ export default function App() {
           refresh={refresh}
           onEvidence={record}
           live={tool === 'tera' ? state.logs : undefined}
+          controller={tool === 'tera' ? teraController : cmdController}
+          onExecution={setExecution}
+        />
+      );
+    if (tool === 'workflow')
+      return (
+        <WorkflowView
+          state={state}
+          execution={execution}
+          shellMode={linux.mode}
+          resetKey={workflowResetKey}
+          onCommand={selectedCommand}
+          onAction={workflowAction}
         />
       );
     if (tool === 'att')
@@ -1275,7 +1413,7 @@ export default function App() {
           <strong>
             Wi-Fi QA <span>Virtual Lab</span>
           </strong>
-          <span className="version">v0.1</span>
+          <span className="version">v0.2</span>
         </div>
         <div className="header-right">
           <span className="simulation-tag">
@@ -1340,6 +1478,7 @@ export default function App() {
                 windows = nextWindows;
                 setChapter(s.chapter);
                 setEvidence(s.evidence);
+                setWorkflowResetKey((key) => key + 1);
                 refresh();
                 notify('實驗室快照已還原。');
               } catch {
@@ -1368,7 +1507,7 @@ export default function App() {
           );
         })}
         <div className="rail-divider" />
-        {(['ap', 'topology', 'script', 'report', 'learning'] as Tool[]).map((t) => {
+        {(['workflow', 'ap', 'topology', 'script', 'report', 'learning'] as Tool[]).map((t) => {
           const Icon = icons[t];
           return (
             <button
@@ -1390,13 +1529,16 @@ export default function App() {
             act(() => engine.reset('6'));
             setChapter(0);
             setEvidence([]);
+            setWorkflowResetKey((key) => key + 1);
             notify('實驗室已回到 6 GHz 初始狀態。');
           }}
         >
           <RotateCcw size={19} />
         </button>
       </nav>
-      <main className="desktop">
+      <main
+        className={`desktop ${opened.includes('workflow') && !minimized.includes('workflow') ? 'workflow-visible' : ''}`}
+      >
         <div className="workspace-bar">
           <div>
             <div className="eyebrow">
@@ -1406,6 +1548,10 @@ export default function App() {
             <h1>你的 Wi-Fi 測試工作台</h1>
           </div>
           <div className="workspace-actions">
+            <button className="workflow-launch" onClick={() => open('workflow')}>
+              <ListChecks size={14} />
+              指令工作流
+            </button>
             <button onClick={() => open('topology')}>
               <Network size={14} />
               Topology
@@ -1470,7 +1616,9 @@ export default function App() {
           )}
         </div>
         {opened
-          .filter((t) => !['tera', 'cmd', 'att', 'msp'].includes(t) && !minimized.includes(t))
+          .filter(
+            (t) => !['tera', 'cmd', 'att', 'msp', 'workflow'].includes(t) && !minimized.includes(t),
+          )
           .map((t) => (
             <Panel
               key={t}
@@ -1484,6 +1632,18 @@ export default function App() {
               {renderTool(t)}
             </Panel>
           ))}
+        <div hidden={!opened.includes('workflow') || minimized.includes('workflow')}>
+          <Panel
+            tool="workflow"
+            extra
+            focused={focus === 'workflow'}
+            onFocus={() => setFocus('workflow')}
+            onClose={() => close('workflow')}
+            onMin={() => setMinimized([...minimized, 'workflow'])}
+          >
+            {renderTool('workflow')}
+          </Panel>
+        </div>
         <button className="mission-bar" onClick={() => open('learning')}>
           <BookOpen size={16} />
           <strong>{chapter ? `Chapter ${chapter}` : 'Free Lab'}</strong>

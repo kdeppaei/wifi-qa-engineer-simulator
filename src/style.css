@@ -1015,6 +1015,297 @@ small {
   resize: both;
   box-shadow: 0 18px 80px #000b;
 }
+.panel-workflow.floating {
+  top: 85px;
+  left: calc(100% - 440px);
+  width: 414px;
+  height: calc(100vh - 146px);
+}
+.workflow-body {
+  height: 100%;
+  overflow: auto;
+  padding: 16px;
+  background: var(--panel);
+}
+.workflow-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 17px;
+}
+.workflow-tabs button {
+  flex: 1;
+  font-size: 12px;
+  padding: 9px 7px;
+}
+.workflow-tabs button.active {
+  color: #a9cdff;
+  background: #243b59;
+  border-color: #486f9f;
+}
+.workspace-actions .workflow-launch {
+  color: #a9cdff;
+  border-color: #385b84;
+}
+.workflow-label {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.workflow-label select {
+  width: 100%;
+  padding: 9px;
+  font-size: 12px;
+}
+.workflow-description,
+.workflow-footer {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.workflow-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 13px 0 7px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.workflow-progress button {
+  font-size: 10px;
+  padding: 4px 6px;
+  background: transparent;
+}
+.workflow-progress-track {
+  height: 3px;
+  background: var(--line);
+  overflow: hidden;
+  border-radius: 3px;
+}
+.workflow-progress-track i {
+  display: block;
+  height: 100%;
+  background: #7fbbff;
+  transition: width 0.3s;
+}
+.workflow-steps {
+  padding: 0;
+  margin: 15px 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  max-height: 184px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.workflow-steps button {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+  font-size: 11px;
+  padding: 6px;
+  gap: 9px;
+}
+.workflow-steps button.current {
+  background: var(--control);
+  border-color: #4d739d;
+}
+.workflow-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 19px;
+  height: 19px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  font-size: 10px;
+}
+.workflow-steps .success .workflow-step-number {
+  color: #79dab3;
+  border-color: #427c69;
+  background: #214139;
+}
+.workflow-steps .failure .workflow-step-number {
+  color: #ffbd8b;
+  border-color: #925f3e;
+}
+.workflow-current {
+  padding: 15px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+}
+.workflow-current h2 {
+  margin: 11px 0 8px;
+  font-size: 14px;
+}
+.workflow-current p {
+  font-size: 11px;
+  line-height: 1.75;
+  color: var(--muted);
+}
+.workflow-observe,
+.workflow-expected {
+  margin: 12px 0;
+}
+.workflow-observe b,
+.workflow-expected b {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 10px;
+  color: var(--text);
+}
+.workflow-current textarea {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  font:
+    11px/1.7 'IBM Plex Mono',
+    Consolas,
+    monospace;
+  padding: 9px;
+  background: var(--terminal);
+}
+.workflow-command-actions,
+.workflow-navigation {
+  display: flex;
+  gap: 7px;
+  margin: 9px 0;
+}
+.workflow-command-actions button,
+.workflow-action,
+.workflow-navigation button {
+  flex: 1;
+  font-size: 11px;
+  padding: 8px 6px;
+}
+.workflow-action {
+  width: 100%;
+  margin-top: 10px;
+}
+.workflow-check-current {
+  width: 100%;
+  margin-top: 10px;
+  font-size: 10px;
+  background: transparent;
+}
+.workflow-refresh-command {
+  margin-top: 6px;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+}
+.workflow-current small {
+  display: block;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.workflow-feedback {
+  padding: 11px;
+  margin: 13px 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.workflow-feedback strong {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11px;
+}
+.workflow-feedback.success {
+  border-color: #3c7160;
+}
+.workflow-feedback.success strong,
+.workflow-complete {
+  color: #7adbb5 !important;
+}
+.workflow-feedback.waiting {
+  border-color: #41617f;
+}
+.workflow-feedback.waiting strong {
+  color: #8dbdff;
+}
+.workflow-feedback.failure,
+.workflow-warning {
+  border-color: #886149;
+}
+.workflow-feedback.failure strong {
+  color: #ffba92;
+}
+.workflow-deltas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 9px 0;
+}
+.workflow-deltas span {
+  border-radius: 3px;
+  padding: 4px 6px;
+  background: var(--control);
+  font-size: 10px;
+  color: var(--text);
+}
+.workflow-output {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--terminal);
+  max-height: 190px;
+  overflow: auto;
+  font-size: 10px;
+  color: #a5c4bf;
+}
+.workflow-live {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  margin-top: 10px;
+  font-size: 11px;
+  color: #9cc6ff;
+}
+.workflow-warning {
+  font-size: 11px;
+  line-height: 1.7;
+  padding: 10px;
+  border: 1px solid #886149;
+  border-radius: 5px;
+  margin-bottom: 12px;
+}
+.workflow-warning button {
+  display: flex;
+  margin-top: 6px;
+  font-size: 11px;
+}
+.workflow-footer {
+  margin-top: 13px;
+}
+@media (min-width: 1280px) {
+  .desktop.workflow-visible {
+    padding-right: 458px;
+  }
+  .workflow-visible .workspace-actions {
+    gap: 5px;
+  }
+  .workflow-visible .workspace-actions button {
+    padding: 7px;
+  }
+  .workflow-visible .workspace-bar h1 {
+    font-size: 17px;
+  }
+}
+@media (max-width: 760px) {
+  .panel-workflow.floating {
+    left: 13px;
+    top: 75px;
+    width: calc(100% - 26px);
+    height: calc(100vh - 130px);
+  }
+}
 .panel-tera.floating,
 .panel-cmd.floating,
 .panel-att.floating,

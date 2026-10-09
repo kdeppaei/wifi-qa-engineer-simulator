@@ -46,6 +46,25 @@ test('standalone file works offline, recovers RF, downloads results and preserve
   await expect(page.locator('.panel-msp')).toBeVisible();
   expect(await terminal(page, 'iw dev stamld0 link')).toContain('Connected');
 
+  await page
+    .locator('.workspace-actions')
+    .getByRole('button', { name: '指令工作流', exact: true })
+    .click();
+  await page.getByLabel('工作流程', { exact: true }).selectOption('uci-bf-lifecycle');
+  await page.getByRole('button', { name: '送入 VT', exact: true }).click();
+  await expect(page.getByLabel('Tera Term command')).toHaveValue(
+    'uci get wireless.MT7999_1_3.etxbfencond',
+  );
+  await page.getByRole('button', { name: '關閉 指令工作流', exact: true }).click();
+  await page.getByLabel('Tera Term command').press('Enter');
+  await page
+    .locator('.workspace-actions')
+    .getByRole('button', { name: '指令工作流', exact: true })
+    .click();
+  await expect(page.getByTestId('workflow-step-bf-read')).toHaveAttribute('data-status', 'success');
+  await expect(page.getByTestId('workflow-feedback')).toContainText('實際執行：uci get');
+  await page.getByRole('button', { name: '關閉 指令工作流', exact: true }).click();
+
   await page.getByLabel('Manual attenuation').fill('90');
   await expect(page.getByTestId('attenuation-value')).toHaveText('90');
   expect(await terminal(page, 'iw dev stamld0 link')).toBe('Not connected.');
