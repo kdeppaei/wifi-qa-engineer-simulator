@@ -2,7 +2,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { peakTemplateBase64 } from './template';
 import { blankPeakValues, getPeakRows, peakCellValue, validatePeakDocument } from './model';
 import type { PeakDocument, PeakSettings } from './model';
-import { xml } from '../rvrExcel/workbook';
+import { reportPrintNames, reportPrintSetup, xml } from '../rvrExcel/workbook';
 
 export function peakHeaderTextColor(color: string): string {
   const components = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
@@ -27,10 +27,10 @@ function cell(address: string, value: string | number | null, style: number) {
 function fitStyles(styles: string, settings: PeakSettings) {
   const fonts = styles.match(/<x:fonts\b[^>]*>([\s\S]*?)<\/x:fonts>/)!;
   const items = fonts[1].match(/<x:font>[\s\S]*?<\/x:font>/g)!;
-  for (const index of [1, 2, 4])
+  for (const index of [1, 2, 3, 4])
     items[index] = items[index].replace(
       /<x:sz\b[^>]*\/\s*>/,
-      `<x:sz val="${settings.fontSize + (index === 2 ? 4 : 0)}"/>`,
+      `<x:sz val="${Math.max(8, settings.fontSize + (index === 2 ? 4 : index === 3 ? -1 : 0))}"/>`,
     );
   items[4] = items[4].replace(
     /<x:color\b[^>]*\/\s*>/,
@@ -52,19 +52,40 @@ function fitStyles(styles: string, settings: PeakSettings) {
     fillBlock[0],
     `<x:fills count="${fills.length}">${fills.join('')}</x:fills>`,
   );
-  const format = settings.decimals ? '0.' + '0'.repeat(settings.decimals) : '0';
+  const format = settings.decimals ? '#,##0.' + '0'.repeat(settings.decimals) : '#,##0';
   styles = styles.replace(
     /<x:numFmt\b[^>]*\bnumFmtId="201"[^>]*\/\s*>/,
     `<x:numFmt numFmtId="201" formatCode="${format}"/>`,
   );
   const xfs = styles.match(/<x:cellXfs\b[^>]*>([\s\S]*?)<\/x:cellXfs>/)!;
   const formats = xfs[1].match(/<x:xf\b[^>]*?(?:\s*\/>|>[\s\S]*?<\/x:xf>)/g)!;
+  const borderBlock = styles.match(/<x:borders\b[^>]*>([\s\S]*?)<\/x:borders>/)!;
+  const borders = borderBlock[1].match(/<x:border\b[^>]*>[\s\S]*?<\/x:border>/g)!;
+  const border = borders.length;
+  for (const groupStart of [false, true])
+    borders.push(
+      `<x:border><x:left style="thin"><x:color rgb="FFE2E8F0"/></x:left><x:right style="thin"><x:color rgb="FFE2E8F0"/></x:right><x:top style="${groupStart ? 'medium' : 'thin'}"><x:color rgb="${groupStart ? 'FF94A3B8' : 'FFE2E8F0'}"/></x:top><x:bottom style="thin"><x:color rgb="FFE2E8F0"/></x:bottom><x:diagonal/></x:border>`,
+    );
+  styles = styles.replace(
+    borderBlock[0],
+    `<x:borders count="${borders.length}">${borders.join('')}</x:borders>`,
+  );
+  formats[8] = formats[8].replace(/borderId="\d+"/, `borderId="${border}"`);
+  for (const index of [2, 3]) {
+    formats[index] = formats[index]
+      .replace(/<x:alignment\b[^>]*\/\s*>/g, '')
+      .replace(/\s*\/>$/, '></x:xf>')
+      .replace('</x:xf>', '<x:alignment horizontal="left" vertical="center" wrapText="1"/></x:xf>')
+      .replace(/\s+applyAlignment="[^"]*"/g, '')
+      .replace('<x:xf ', '<x:xf applyAlignment="1" ');
+  }
   const base = formats.length;
-  for (let band = 0; band < 2; band++)
-    for (const numberFormat of [0, 200, 201])
-      formats.push(
-        `<x:xf numFmtId="${numberFormat}" fontId="1" fillId="${band ? stripe : plain}" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyAlignment="1"><x:alignment horizontal="${numberFormat ? 'right' : 'left'}" ${numberFormat ? '' : 'indent="1"'} vertical="center" wrapText="1"/></x:xf>`,
-      );
+  for (let groupStart = 0; groupStart < 2; groupStart++)
+    for (let band = 0; band < 2; band++)
+      for (const numberFormat of [0, 200, 201])
+        formats.push(
+          `<x:xf numFmtId="${numberFormat}" fontId="1" fillId="${band ? stripe : plain}" borderId="${border + groupStart}" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><x:alignment horizontal="${numberFormat ? 'right' : 'left'}" indent="1" vertical="center" wrapText="1"/></x:xf>`,
+        );
   styles = styles.replace(
     xfs[0],
     `<x:cellXfs count="${formats.length}">${formats.join('')}</x:cellXfs>`,
@@ -89,14 +110,15 @@ export function makePeakWorkbook(document: PeakDocument, blank = false): Uint8Ar
   const meta: (string | null)[] = [
     null,
     settings.title,
-    `SU / MU 單位：${settings.unit}。Gain 僅手填，不計算。`,
-    `Source: ${settings.source}${settings.note.trim() ? ' / ' + settings.note : ''}`,
-    '每列代表一組 Band/Config、Channel 與 Direction；可直接改儲存格、篩選或新增表格列。',
+    settings.note.trim() ? `條件：${settings.note.trim()}` : null,
+    `Source: ${settings.source}`,
+    `SU / MU (${settings.unit})`,
   ];
+  const reportWidth = columns.reduce((total, column) => total + column.width, 0);
   let data = meta
     .map(
       (value, i) =>
-        `<x:row r="${i + 1}" ht="${i === 1 ? Math.max(26, settings.fontSize + 10) : 24}" customHeight="1">${cell(`A${i + 1}`, value, i === 1 ? 2 : 3)}</x:row>`,
+        `<x:row r="${i + 1}" ht="${Math.min(409, i === 0 ? 10 : Math.max(i === 1 ? settings.fontSize + 14 : value === null ? 8 : 20, Math.ceil((weightedLength(value ?? '') * settings.fontSize) / 11 / reportWidth) * (settings.fontSize + 6)))}" customHeight="1">${cell(`A${i + 1}`, value, i === 1 ? 2 : 3)}</x:row>`,
     )
     .join('');
   const headerHeight = Math.max(
@@ -122,7 +144,8 @@ export function makePeakWorkbook(document: PeakDocument, blank = false): Uint8Ar
       ),
     );
     const band = settings.bandedRows && i % 2 === 1 ? 3 : 0;
-    data += `<x:row r="${i + 7}" ht="${height}" customHeight="1">${values.map((v, index) => cell(`${columnName(index)}${i + 7}`, v, fitted.base + band + (typeof v === 'number' ? (columns[index].key === 'channel' ? 1 : 2) : 0))).join('')}</x:row>`;
+    const groupStart = i > 0 && original.groupId !== rows[i - 1].groupId ? 6 : 0;
+    data += `<x:row r="${i + 7}" ht="${Math.min(409, height)}" customHeight="1">${values.map((v, index) => cell(`${columnName(index)}${i + 7}`, v, fitted.base + groupStart + band + (typeof v === 'number' ? (columns[index].key === 'channel' ? 1 : 2) : 0))).join('')}</x:row>`;
   });
   let sheet = strFromU8(files['xl/worksheets/sheet1.xml']);
   sheet = sheet.replace(
@@ -134,6 +157,14 @@ export function makePeakWorkbook(document: PeakDocument, blank = false): Uint8Ar
     `<x:cols>${columns.map((c, i) => `<x:col min="${i + 1}" max="${i + 1}" width="${c.width}" customWidth="1"/>`).join('')}</x:cols>`,
   );
   sheet = sheet.replace(/<x:sheetProtection\b[^>]*(?:\s*\/>|>[\s\S]*?<\/x:sheetProtection>)/g, '');
+  sheet = sheet.replace(/showGridLines="[^"]*"/, 'showGridLines="0"');
+  sheet = sheet.replace(/<x:mergeCells\b[^>]*>[\s\S]*?<\/x:mergeCells>/g, '');
+  if (columns.length > 1)
+    sheet = sheet.replace(
+      '</x:sheetData>',
+      `</x:sheetData><x:mergeCells count="4">${[2, 3, 4, 5].map((r) => `<x:mergeCell ref="A${r}:${lastColumn}${r}"/>`).join('')}</x:mergeCells>`,
+    );
+  sheet = reportPrintSetup(sheet);
   if (/<x:dimension\b/.test(sheet))
     sheet = sheet.replace(
       /<x:dimension\b[^>]*\/\s*>/,
@@ -145,8 +176,14 @@ export function makePeakWorkbook(document: PeakDocument, blank = false): Uint8Ar
       `</x:sheetPr><x:dimension ref="A1:${lastColumn}${lastRow}"/>`,
     );
   files['xl/worksheets/sheet1.xml'] = strToU8(sheet);
+  files['xl/workbook.xml'] = strToU8(
+    reportPrintNames(strFromU8(files['xl/workbook.xml']), 'Peak Results', 0, lastColumn, lastRow),
+  );
   let table = strFromU8(files['xl/tables/table1.xml']);
   table = table.replace(/\bref="[^"]*"/g, `ref="${ref}"`);
+  // Omitting autoFilter makes Excel's whole-Table ShowAutoFilter false.
+  // Per-column hiddenButton flags alone leave ShowAutoFilter true in native Excel.
+  table = table.replace(/<x:autoFilter\b[^>]*(?:\s*\/>|>[\s\S]*?<\/x:autoFilter>)/, '');
   table = table.replace(
     /<x:tableColumns\b[^>]*>[\s\S]*?<\/x:tableColumns>/,
     `<x:tableColumns count="${columns.length}">${columns.map((c, i) => `<x:tableColumn id="${i + 1}" name="${xml(c.label.trim())}"/>`).join('')}</x:tableColumns>`,

@@ -1609,6 +1609,14 @@ export default function App() {
           <span className="version">v0.3.1</span>
         </div>
         <div className="header-right">
+          <a
+            className="companion-tool"
+            href="https://excel-chart-table-tools.kdeppaei2.chatgpt.site"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Excel 繪圖與表格
+          </a>
           <span className="simulation-tag">
             <FlaskConical size={12} />
             SIMULATION

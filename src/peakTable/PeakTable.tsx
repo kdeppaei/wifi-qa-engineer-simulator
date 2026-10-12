@@ -201,11 +201,19 @@ export default function PeakTable() {
   return (
     <div className="peak-tool">
       <section className="peak-setup">
-        <h2>1. 建立 Peak 測試結果表</h2>
+        <div className="section-heading">
+          <span className="step-number">1</span>
+          <h2>建立 Peak 測試設定</h2>
+        </div>
         <p className="hint">
-          每個設定組指定一個 Band/Config 與 Channel，勾選 UL、DL 或 BI 後，各方向展開成一列。 Gain
-          Criteria、SU、MU、Gain 與新增欄位都由你手填，沒有自動計算或 Pass／Fail 判定。
+          指定 Band/Config、Channel 與測試方向。每個方向展開成一列，再到結果表填入量測值。
         </p>
+        <div className="peak-task-note">
+          <span>Gain 只手填</span>
+          <span>
+            {doc.groups.length} 個設定組 · {rows.length} 個方向列
+          </span>
+        </div>
         <div className="peak-metadata">
           <label>
             表格標題
@@ -491,7 +499,30 @@ export default function PeakTable() {
       </section>
 
       <section className="peak-results">
-        <h2>2. 手填數值並核對結果表</h2>
+        <div className="preview-toolbar peak-results-toolbar">
+          <div className="section-heading">
+            <span className="step-number">2</span>
+            <h2>手填數值與核對報告</h2>
+          </div>
+          <div className="peak-downloads">
+            <button
+              className="download"
+              disabled={!canExport}
+              onClick={() => download(false)}
+              aria-describedby="peak-export-status"
+            >
+              下載 Peak Excel .xlsx
+            </button>
+            <button disabled={!canExport} onClick={() => download(true)}>
+              下載 Peak 空白表 .xlsx
+            </button>
+          </div>
+        </div>
+        <p id="peak-export-status" className="hint export-status">
+          {canExport
+            ? '表格可下載；量測欄位可留空，Gain 保留你手填的內容。'
+            : '請修正標題、設定組或數值格式後再下載。'}
+        </p>
         <div className="peak-table-caption">
           <h3>{doc.settings.title || '未命名表格'}</h3>
           <p>
@@ -532,7 +563,14 @@ export default function PeakTable() {
               {rows.map((row, index) => (
                 <tr key={row.key}>
                   {visibleColumns.map((column) => (
-                    <td key={column.id}>
+                    <td
+                      key={column.id}
+                      className={
+                        column.type === 'number' || column.key === 'gain'
+                          ? 'peak-numeric'
+                          : undefined
+                      }
+                    >
                       {metadataKeys.has(column.key) ? (
                         <span>{peakCellValue(row, column, doc.settings)}</span>
                       ) : (
@@ -584,7 +622,14 @@ export default function PeakTable() {
                 {rows.map((row) => (
                   <tr key={row.key}>
                     {visibleColumns.map((column) => (
-                      <td key={column.id}>
+                      <td
+                        key={column.id}
+                        className={
+                          column.type === 'number' || column.key === 'gain'
+                            ? 'peak-numeric'
+                            : undefined
+                        }
+                      >
                         {displayValue(
                           peakCellValue(row, column, doc.settings),
                           column.key === 'channel' ? 0 : doc.settings.decimals,
@@ -607,19 +652,9 @@ export default function PeakTable() {
             </ul>
           </div>
         )}
-        <div className="peak-downloads">
-          <button className="download" disabled={!canExport} onClick={() => download(false)}>
-            下載 Peak Excel .xlsx
-          </button>
-          <button disabled={!canExport} onClick={() => download(true)}>
-            下載 Peak 空白表 .xlsx
-          </button>
-        </div>
         <p className="hint">
-          匯出的 Excel
-          是可編輯的原生表格，含篩選與數字儲存格，可修改欄名、量測值、排序、增刪列與格式。
-          為方便篩選，每列重複 Band/Config 與 Channel，不合併儲存格。Gain
-          始終只手填，空白表不含量測值。
+          匯出的 Excel 使用可編輯的原生表格，可修改欄名、量測值、排序、增刪列與格式。 每列保留完整
+          Band/Config 與 Channel，方便整理與引用。Gain 始終只手填，空白表不含量測值。
         </p>
         {message && (
           <p className="message" role="status">

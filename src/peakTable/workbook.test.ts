@@ -77,7 +77,7 @@ describe('native editable manual Peak results table', () => {
     const styles = strFromU8(files['xl/styles.xml']);
     expect(styles).toContain('FFFFFF00');
     expect(styles).toContain('FF172033');
-    expect(styles).toContain('formatCode="0.000"');
+    expect(styles).toContain('formatCode="#,##0.000"');
     expect(styles).toContain('<x:sz val="14"');
     expect(strFromU8(files['xl/tables/table1.xml'])).toContain('showRowStripes="0"');
     const sheet = strFromU8(files['xl/worksheets/sheet1.xml']);
@@ -96,6 +96,55 @@ describe('native editable manual Peak results table', () => {
     expect(sheet).toContain('2G_UHR40');
     expect(sheet).toMatch(/r="B10"[^>]*><x:v>6<\/x:v>/);
     expect(sheet).toContain('BI');
+  });
+  it('presents a report with hidden filter arrows, structural group borders and bounded A4 printing', () => {
+    const { doc } = packageOf();
+    doc.settings.note = '5 GHz TCP DL / FW A';
+    doc.groups.push({
+      id: 'second',
+      bandConfig: '5G_UHR160',
+      channel: '130',
+      directions: ['UL', 'DL'],
+    });
+    const files = unzipSync(makePeakWorkbook(doc));
+    const sheet = strFromU8(files['xl/worksheets/sheet1.xml']);
+    const table = strFromU8(files['xl/tables/table1.xml']);
+    const styles = strFromU8(files['xl/styles.xml']);
+    const workbook = strFromU8(files['xl/workbook.xml']);
+    expect(sheet).toContain('條件：5 GHz TCP DL / FW A');
+    expect(sheet).toContain('SU / MU (Mbps)');
+    expect(sheet).not.toContain('每列代表');
+    expect(sheet).not.toContain('Gain 僅手填');
+    expect(sheet).toContain('showGridLines="0"');
+    expect(sheet).toContain('ref="A2:G2"');
+    expect(sheet).toContain('ref="A4:G4"');
+    expect(table).not.toMatch(/<x:(?:autoFilter|filterColumn)\b/);
+    expect(table).toContain('ref="A6:G10"');
+    expect(sheet).toContain('paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"');
+    expect(workbook).toContain("'Peak Results'!$A$2:$G$10");
+    expect(workbook).toContain("'Peak Results'!$6:$6");
+    const rowStyle = (address: string) =>
+      Number(sheet.match(new RegExp(`r="${address}" s="(\\d+)"`))![1]);
+    const formats = styles
+      .match(/<x:cellXfs\b[^>]*>([\s\S]*?)<\/x:cellXfs>/)![1]
+      .match(/<x:xf\b[^>]*?(?:\s*\/>|>[\s\S]*?<\/x:xf>)/g)!;
+    expect(formats[rowStyle('A7')]).not.toEqual(formats[rowStyle('A9')]);
+    expect(styles).toContain('<x:top style="medium">');
+    expect(sheet).not.toMatch(/<x:f\b/);
+  });
+  it('keeps a narrow one-column report valid without a one-cell merge or extra filter fields', () => {
+    const { doc } = packageOf();
+    doc.columns.forEach((column) => {
+      column.visible = column.key === 'su';
+    });
+    doc.settings.fontSize = 8;
+    const files = unzipSync(makePeakWorkbook(doc));
+    expect(strFromU8(files['xl/worksheets/sheet1.xml'])).not.toContain('mergeCells');
+    expect(strFromU8(files['xl/tables/table1.xml'])).not.toMatch(
+      /<x:(?:autoFilter|filterColumn)\b/,
+    );
+    expect(strFromU8(files['xl/workbook.xml'])).toContain("'Peak Results'!$A$2:$A$8");
+    expect(strFromU8(files['xl/styles.xml'])).not.toContain('<x:sz val="7"');
   });
   it('blocks invalid selected values and duplicate native table names before creating a file', () => {
     const { doc } = packageOf();

@@ -1,5 +1,17 @@
 # RvR Excel 工具驗證紀錄
 
+## v1.4（2026-10-12）
+
+Excel 工具採工具切換、曲線格式、輸入／預覽匯出分層，主要下載動作置於预覽工具列；進階說明展開，固定曲線預覽保留。Peak 與曲線改用可編輯報告版面，移除主報告操作教學和黃色填寫區；保留原值、手填 Gain、真實 0 及空白。Peak 使用原生 Table；為相容 Excel，匯出時移除 autoFilter 節點隱藏箭頭，可在表格設計重新啟用。
+
+- 204 項單元測試通過；TypeScript、ESLint、正式建置通過。
+- 全部 28 項瀏覽器測試通過，含兩工具離線版、858×668 固定曲線預覽、390px、設定／頁籤狀態及原生 XLSX；Peak 匯出修正後重跑 4 項通過。
+- 兩個公开 Sites 原始版本以全新 Chromium context 匿名驗證 HTTP 200，不帶 cookies、登入或 localStorage。Excel 可從公開頁下載曲線／Peak 的原生 XLSX；Wi-Fi 可重現 90 dB 斷線與 MSP 中斷、NETWORK-NOT-FOUND，恢復 0 dB 後逐步重連。原中斷 Run 不會被改成完成。
+- 兩份空白範本由 Artifact Tool 匯入編輯與渲染，原生圖表連結及列印設定以 XML 補充；獨立 openpyxl／ZIP 檢查通過。未改寫 baseline base64 或使用者 Downloads 原檔。
+- 本機 Excel 唯讀開啟兩份範本：Peak ListObjects=1、ShowAutoFilter=False；Single／TxBF 原生圖表与 A2 標題連結存在。三頁皆隱藏格線、A4 橫向、fitWidth=1／fitHeight=0、重複第 6 行表頭。未修改使用者開啟中的活頁簿或 Office 授權。
+
+公開網址與維護方法見 [hosting.md](hosting.md)。輸入數據在訪客瀏覽器處理，網站無上傳 API。Sites 本機封裝器缺少 Bash，因此使用已推送的相同靜態來源與原生雲端建置發布；訪客不需要開發工具。
+
 ## v1.3（2026-10-12）
 
 工具改名為「Excel 繪圖與表格工具」，原網址與單一 HTML 檔名保留。新增原生 Peak 表格與固定曲線預覽。Peak 的 Gain 依使用者明確選擇只手填，不提供自動計算或 Pass／Fail 判定。

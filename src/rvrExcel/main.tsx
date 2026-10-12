@@ -571,44 +571,82 @@ function App() {
     }
   }
   return (
-    <main>
-      <header>
+    <main className="excel-app">
+      <header className="app-header">
         <div>
-          <span className="eyebrow">工具 02 · 量測資料整理</span>
+          <span className="eyebrow">MEASUREMENT WORKSPACE · 工具 02</span>
           <h1>Excel 繪圖與表格工具</h1>
-          <p>貼上數值矩陣繪圖，或依 Band／Config 建立 Peak 結果表，再下載可編輯的 Excel。</p>
+          <p>從量測數據到報告。貼上矩陣繪製曲線，或建立 Peak 結果表，下載後仍可在 Excel 編輯。</p>
         </div>
-        <span className="offline">離線使用 · v1.3</span>
-      </header>
-      <nav aria-label="資料格式">
-        {(
-          [
-            ['single', '單條曲線 · 兩欄'],
-            ['common', 'TxBF ON／OFF · 三欄'],
-            ['separate', 'TxBF ON／OFF · 各兩欄'],
-          ] as const
-        ).map(([key, title]) => (
-          <button
-            key={key}
-            aria-pressed={view === 'chart' && mode === key}
-            onClick={() => {
-              setMode(key);
-              setView('chart');
-              setMessage('');
-              setFileError('');
-            }}
+        <div className="app-header-actions">
+          <span className="offline">瀏覽器直接使用 · v1.4</span>
+          <a
+            href="https://wifi-qa-virtual-lab.kdeppaei2.chatgpt.site"
+            target="_blank"
+            rel="noreferrer"
           >
-            {title}
+            Wi-Fi 實驗室 ↗
+          </a>
+          <a
+            href="https://github.com/kdeppaei/wifi-qa-engineer-simulator"
+            target="_blank"
+            rel="noreferrer"
+          >
+            GitHub 原始碼 ↗
+          </a>
+        </div>
+      </header>
+      <div className="workflow-overview" aria-label="使用步驟">
+        <span>
+          <b>01</b> 選擇繪圖或表格
+        </span>
+        <span>
+          <b>02</b> 貼上或填寫資料
+        </span>
+        <span>
+          <b>03</b> 檢查並下載 Excel
+        </span>
+      </div>
+      <nav className="tool-navigation" aria-label="工具與資料格式">
+        <div className="tool-switcher" aria-label="工具選擇">
+          <button aria-pressed={view === 'chart'} onClick={() => setView('chart')}>
+            曲線繪圖
           </button>
-        ))}
-        <button aria-pressed={view === 'peak'} onClick={() => setView('peak')}>
-          Peak 結果表 · 七欄
-        </button>
+          <button aria-pressed={view === 'peak'} onClick={() => setView('peak')}>
+            Peak 結果表 · 七欄
+          </button>
+        </div>
+        <div className="format-selector" aria-label="資料格式" hidden={view === 'peak'}>
+          <span className="format-caption">曲線資料格式</span>
+          {(
+            [
+              ['single', '單條曲線 · 兩欄'],
+              ['common', 'TxBF ON／OFF · 三欄'],
+              ['separate', 'TxBF ON／OFF · 各兩欄'],
+            ] as const
+          ).map(([key, title]) => (
+            <button
+              key={key}
+              aria-pressed={view === 'chart' && mode === key}
+              onClick={() => {
+                setMode(key);
+                setView('chart');
+                setMessage('');
+                setFileError('');
+              }}
+            >
+              {title}
+            </button>
+          ))}
+        </div>
       </nav>
       <div hidden={view !== 'chart'}>
         <div className="workspace">
           <section className="editor">
-            <h2>1. 貼上測試數據</h2>
+            <div className="section-heading">
+              <span className="step-number">1</span>
+              <h2>貼上測試數據</h2>
+            </div>
             <p>
               {mode === 'common'
                 ? '每行：dB、ON Mbps、OFF Mbps。測不到的值可留空。'
@@ -616,6 +654,30 @@ function App() {
                   ? 'ON、OFF 分別貼上兩欄。兩組可使用不同 dB 測點。'
                   : '可貼上整塊 MSP 矩陣。預設只擷取左上方前兩欄，右側其他數值不納入曲線。'}
             </p>
+            <div className="row data-actions">
+              <button className="secondary" onClick={() => input.current?.click()}>
+                匯入 CSV／TSV
+              </button>
+              <button className="secondary" onClick={demo}>
+                載入示範
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setSingle('');
+                  setCommon('');
+                  setOn('');
+                  setOff('');
+                  setMetadata(defaultMetadata());
+                  setPresentation(defaultPresentation());
+                  setMapping({ single: {}, common: {}, on: {}, off: {} });
+                  setFileError('');
+                  setMessage('');
+                }}
+              >
+                清空全部
+              </button>
+            </div>
             <label htmlFor="data">
               {mode === 'separate'
                 ? `TxBF ON 原始矩陣：${xLabel}／${yLabel}`
@@ -664,30 +726,6 @@ function App() {
                 />
               </>
             )}
-            <div className="row">
-              <button className="secondary" onClick={() => input.current?.click()}>
-                匯入 CSV／TSV
-              </button>
-              <button className="secondary" onClick={demo}>
-                載入示範
-              </button>
-              <button
-                className="secondary"
-                onClick={() => {
-                  setSingle('');
-                  setCommon('');
-                  setOn('');
-                  setOff('');
-                  setMetadata(defaultMetadata());
-                  setPresentation(defaultPresentation());
-                  setMapping({ single: {}, common: {}, on: {}, off: {} });
-                  setFileError('');
-                  setMessage('');
-                }}
-              >
-                清空全部
-              </button>
-            </div>
             <input
               ref={input}
               hidden
@@ -776,7 +814,29 @@ function App() {
             </p>
           </section>
           <section className="preview">
-            <h2>2. 檢查曲線並下載 Excel</h2>
+            <div className="preview-toolbar">
+              <div className="section-heading">
+                <span className="step-number">2</span>
+                <h2>曲線預覽與匯出</h2>
+              </div>
+              <button
+                className="download"
+                disabled={
+                  result.status !== 'ready' || !xLabel.trim() || !yLabel.trim() || !appearanceValid
+                }
+                onClick={download}
+                aria-describedby="chart-export-status"
+              >
+                下載 Excel 原生圖表 .xlsx
+              </button>
+            </div>
+            <p id="chart-export-status" className="hint export-status">
+              {result.status === 'ready'
+                ? !xLabel.trim() || !yLabel.trim() || !appearanceValid
+                  ? '請填妥座標軸、標題與圖例名稱，並為各曲線保留線條或測點。'
+                  : '資料已可匯出。標題、線型與測點設定會同步帶入 Excel。'
+                : '先貼上數據或載入示範，檢查曲線後即可下載。'}
+            </p>
             <div
               ref={workbench}
               className={`chart-workbench${expanded ? ' chart-workbench-full' : ''}`}
@@ -888,21 +948,15 @@ function App() {
                 </details>
               </>
             )}
-            <button
-              className="download"
-              disabled={
-                result.status !== 'ready' || !xLabel.trim() || !yLabel.trim() || !appearanceValid
-              }
-              onClick={download}
-            >
-              下載 Excel 原生圖表 .xlsx
-            </button>
-            <p className="hint">
-              Excel 的 Single 工作表用 A／B 欄；TxBF 工作表用 A／B（ON）與 D／E（OFF）。從第 7
-              行開始，修改資料後圖表會更新。換一輪測試前先清除舊測點。 改 A2 更新圖表標題，改 B6／E6
-              更新圖例。右鍵曲線可「設定數列格式」；右鍵圖表可「選取資料」。 點選曲線後，Excel
-              公式列可查看 SERIES 資料來源。圖表與工作表均未設保護。
-            </p>
+            <details className="excel-instructions">
+              <summary>在 Excel 繼續編輯圖表</summary>
+              <p className="hint">
+                Excel 的 Single 工作表用 A／B 欄；TxBF 工作表用 A／B（ON）與 D／E（OFF）。從第 7
+                行開始，修改資料後圖表會更新。換一輪測試前先清除舊測點。 改 A2 更新圖表標題，改
+                B6／E6 更新圖例。右鍵曲線可「設定數列格式」；右鍵圖表可「選取資料」。
+                點選曲線後，Excel 公式列可查看 SERIES 資料來源。圖表與工作表均未設保護。
+              </p>
+            </details>
             <details className="excel-help">
               <summary>Excel 無法編輯時的檢查方式</summary>
               <p className="hint">
@@ -956,7 +1010,10 @@ function App() {
       <div hidden={view !== 'peak'}>
         <PeakTable />
       </div>
-      <footer>使用你輸入的資料整理曲線與表格。繪圖使用原始測點，Peak 的 Gain 完全由你手填。</footer>
+      <footer>
+        資料在此瀏覽器處理。重新整理前請先下載結果；曲線保留原始測點，Peak 的 Gain
+        只使用你手填的值。
+      </footer>
     </main>
   );
 }

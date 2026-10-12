@@ -1,8 +1,16 @@
 :root {
   font-family: 'Segoe UI', 'Microsoft JhengHei', Arial, sans-serif;
+  font-size: 14px;
   color: #172033;
-  background: #f2f5fa;
+  background: #f4f6f8;
   font-synthesis: none;
+  --accent: #0f6cbd;
+  --accent-hover: #115ea3;
+  --surface-border: #dce3ea;
+  --muted: #596b7e;
+}
+[hidden] {
+  display: none !important;
 }
 .mapping-grid {
   display: grid;
@@ -177,9 +185,9 @@ body {
   margin: 0;
 }
 main {
-  max-width: 1440px;
+  max-width: 1520px;
   margin: auto;
-  padding: 36px 32px;
+  padding: 28px 32px;
 }
 header {
   display: flex;
@@ -193,7 +201,7 @@ h1 {
   letter-spacing: -0.6px;
 }
 h2 {
-  font-size: 20px;
+  font-size: 19px;
   margin: 0 0 14px;
 }
 p {
@@ -201,17 +209,19 @@ p {
   margin: 8px 0 18px;
 }
 .eyebrow {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 600;
-  color: #42618b;
+  color: var(--muted);
+  letter-spacing: 1px;
 }
 .offline {
   white-space: nowrap;
   font-size: 13px;
-  border: 1px solid #c7d5e7;
-  border-radius: 6px;
-  padding: 8px 12px;
+  border: 1px solid #dce3ea;
+  border-radius: 20px;
+  padding: 6px 12px;
   color: #42618b;
+  background: #fff;
 }
 nav {
   display: flex;
@@ -229,7 +239,8 @@ button {
   padding: 11px 15px;
 }
 button:hover {
-  border-color: #2563eb;
+  border-color: var(--accent);
+  background: #f1f6fc;
 }
 button:focus-visible,
 input:focus-visible,
@@ -239,9 +250,9 @@ select:focus-visible {
   outline-offset: 2px;
 }
 nav button[aria-pressed='true'] {
-  background: #172b48;
-  color: white;
-  border-color: #172b48;
+  background: #e9f2fc;
+  color: #0b518b;
+  border-color: #b6d3ef;
 }
 button:disabled {
   opacity: 0.45;
@@ -256,10 +267,10 @@ button:disabled {
 section {
   min-width: 0;
   background: #fff;
-  border: 1px solid #dfe6ef;
-  border-radius: 12px;
-  padding: 26px;
-  box-shadow: 0 4px 18px #17203305;
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  padding: 22px;
+  box-shadow: 0 2px 6px #17203304;
 }
 label {
   font-size: 14px;
@@ -369,11 +380,15 @@ svg text {
 .download {
   display: block;
   width: 100%;
-  background: #2563eb;
+  background: var(--accent);
   color: white;
-  border-color: #2563eb;
+  border-color: var(--accent);
   font-weight: 600;
   padding: 14px;
+}
+.download:hover:enabled {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 .message {
   font-size: 14px;
@@ -417,6 +432,169 @@ footer {
   color: #607086;
   padding: 24px 0;
 }
+.app-header {
+  align-items: center;
+  padding-bottom: 14px;
+}
+.app-header p {
+  max-width: 780px;
+  margin-bottom: 4px;
+  color: #465b70;
+  font-size: 15px;
+}
+.app-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px 16px;
+  max-width: 300px;
+  font-size: 13px;
+}
+.app-header-actions a {
+  color: #0b5ca1;
+  text-decoration: none;
+  padding: 4px 0;
+}
+.app-header-actions a:hover {
+  text-decoration: underline;
+}
+a:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #93b8ff;
+  outline-offset: 3px;
+}
+.workflow-overview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
+  margin: 8px 0 20px;
+  color: #53677b;
+  font-size: 13px;
+}
+.workflow-overview span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.workflow-overview b {
+  color: #738395;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+.tool-navigation {
+  display: block;
+  margin: 0 0 22px;
+  background: #fff;
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.tool-switcher {
+  display: flex;
+  gap: 20px;
+  padding: 0 20px;
+  border-bottom: 1px solid #e5ebf1;
+}
+.tool-switcher button {
+  border: 0;
+  border-radius: 0;
+  border-bottom: 3px solid transparent;
+  padding: 15px 3px 12px;
+  font-weight: 600;
+  background: transparent;
+  color: #53677b;
+}
+.tool-switcher button[aria-pressed='true'] {
+  background: transparent;
+  border-color: var(--accent);
+  color: #0b5ca1;
+}
+.tool-switcher button:hover {
+  background: #f7fafe;
+}
+.format-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 20px;
+}
+.format-caption {
+  font-size: 12px;
+  color: var(--muted);
+  margin-right: 4px;
+}
+.format-selector button {
+  padding: 7px 12px;
+  font-size: 13px;
+  background: #fff;
+  border-color: #dce3ea;
+  border-radius: 6px;
+}
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-bottom: 12px;
+}
+.section-heading h2 {
+  margin: 0;
+  line-height: 1.5;
+}
+.step-number {
+  flex: 0 0 25px;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: #edf3fa;
+  color: #345777;
+  font-size: 12px;
+  font-weight: 600;
+}
+.preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.preview-toolbar .section-heading {
+  margin-bottom: 0;
+}
+.preview-toolbar .download {
+  width: auto;
+  font-size: 13px;
+  padding: 10px 14px;
+}
+.export-status {
+  margin: 10px 0 16px;
+  font-size: 12px;
+}
+.editor > p:not(.hint):not(.error) {
+  font-size: 13px;
+  color: #53677b;
+}
+.data-actions {
+  margin: 0 0 18px;
+}
+.excel-instructions,
+.excel-help {
+  margin-top: 16px;
+  padding-top: 14px;
+}
+.excel-instructions summary,
+.excel-help summary {
+  font-size: 13px;
+  color: #465b70;
+}
+.table-scroll td,
+.peak-tool td {
+  font-variant-numeric: tabular-nums;
+}
 @media (max-width: 1250px) {
   .workspace {
     grid-template-columns: 1fr;
@@ -456,6 +634,11 @@ footer {
   header {
     display: block;
   }
+  .app-header-actions {
+    max-width: none;
+    justify-content: flex-start;
+    margin-top: 14px;
+  }
   .offline {
     display: inline-block;
     margin-bottom: 10px;
@@ -471,5 +654,24 @@ footer {
   }
   .workspace {
     gap: 16px;
+  }
+  .workflow-overview {
+    gap: 8px 18px;
+    margin-top: 2px;
+    margin-bottom: 18px;
+    font-size: 12px;
+  }
+  .tool-switcher {
+    padding: 0 14px;
+  }
+  .format-selector {
+    padding: 12px 14px;
+    gap: 7px;
+  }
+  .format-caption {
+    width: 100%;
+  }
+  .preview-toolbar .download {
+    width: 100%;
   }
 }

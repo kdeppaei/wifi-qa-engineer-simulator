@@ -15,6 +15,27 @@
   --terminal: #080f18;
   --accent: #75afff;
 }
+.companion-tool {
+  color: var(--accent);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+.companion-tool:hover {
+  text-decoration: underline;
+}
+.companion-tool:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (max-width: 760px) {
+  .companion-tool {
+    font-size: 11px;
+    padding: 5px;
+  }
+}
 * {
   box-sizing: border-box;
 }

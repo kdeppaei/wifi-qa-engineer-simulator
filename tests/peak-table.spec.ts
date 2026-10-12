@@ -94,6 +94,8 @@ test('Peak groups expand UL, DL and optional BI while preserving manual results 
   await expect(page.getByLabel('第 1 列 SU', { exact: true })).toHaveValue('1200.25');
   await page.getByLabel('設定組 1 BI', { exact: true }).check();
   await page.getByLabel('第 3 列 Gain', { exact: true }).fill('Pending');
+  await expect(page.getByRole('button', { name: '單條曲線 · 兩欄', exact: true })).toBeHidden();
+  await page.getByRole('button', { name: '曲線繪圖', exact: true }).click();
   await page.getByRole('button', { name: '單條曲線 · 兩欄', exact: true }).click();
   await page.locator('#data').fill('0\t980\n10\t900');
   await page.getByRole('button', { name: peakTab, exact: true }).click();
@@ -154,7 +156,7 @@ test('Peak custom headers, visible order, added fields and styling export as an 
   const tableName = Object.keys(files).find((name) => /^xl\/tables\/table\d+\.xml$/.test(name))!;
   const table = strFromU8(files[tableName]);
   expect(table).toContain('ref="A6:G8"');
-  expect(table).toMatch(new RegExp(`<${ns}autoFilter\\b[^>]*ref="A6:G8"`));
+  expect(table).not.toMatch(new RegExp(`<${ns}autoFilter\\b`));
   expect(table).toContain('name="SU rate"');
   expect(table).toContain('name="Remarks"');
   expect(table).not.toContain('Gain Criteria');

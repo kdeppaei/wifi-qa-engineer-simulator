@@ -75,7 +75,7 @@ describe('Reusable native Excel export', () => {
     expect(sheet).toContain('Loss &lt;dB&gt;');
     expect(chart).toContain('Data rate &amp; Mbps');
     expect(sheet).not.toContain('<x:pane');
-    expect(sheet).toContain('showGridLines="1"');
+    expect(sheet).toContain('showGridLines="0"');
   });
   it('keeps native numeric XY bindings and blank gaps with typed input cells', () => {
     const files = unzipSync(

@@ -36,6 +36,43 @@ function stringReference(sheet: string, cell: string, value: string) {
   const address = cell.match(/^(\D+)(\d+)$/)!;
   return `<c:strRef><c:f>'${sheet}'!$${address[1]}$${address[2]}</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>${xml(value)}</c:v></c:pt></c:strCache></c:strRef>`;
 }
+
+/** Replace only this template sheet's report printing settings. */
+export function reportPrintSetup(sheet: string): string {
+  sheet = sheet.replace(/<x:pageSetUpPr\b[^>]*(?:\s*\/>|>[\s\S]*?<\/x:pageSetUpPr>)/g, '');
+  sheet = sheet.replace('</x:sheetPr>', '<x:pageSetUpPr fitToPage="1"/></x:sheetPr>');
+  sheet = sheet.replace(
+    /<x:(?:printOptions|pageSetup|headerFooter)\b[^>]*(?:\s*\/>|>[\s\S]*?<\/x:(?:printOptions|pageSetup|headerFooter)>)/g,
+    '',
+  );
+  const setup =
+    '<x:printOptions horizontalCentered="1" gridLines="0"/><x:pageMargins left="0.3" right="0.3" top="0.4" bottom="0.4" header="0.2" footer="0.2"/><x:pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/><x:headerFooter><x:oddFooter>&amp;R&amp;P / &amp;N</x:oddFooter></x:headerFooter>';
+  return /<x:pageMargins\b/.test(sheet)
+    ? sheet.replace(/<x:pageMargins\b[^>]*\/\s*>/, setup)
+    : sheet.replace(/(?=<x:(?:drawing|tableParts)\b|<\/x:worksheet>)/, setup);
+}
+
+export function reportPrintNames(
+  workbook: string,
+  sheetName: string,
+  sheetId: number,
+  lastColumn: string,
+  lastRow: number,
+): string {
+  workbook = workbook.replace(
+    /<x:definedName\b([^>]*)>[\s\S]*?<\/x:definedName>/g,
+    (all, attrs: string) =>
+      new RegExp(`\\blocalSheetId="${sheetId}"`).test(attrs) &&
+      /\bname="_xlnm.Print_(?:Area|Titles)"/.test(attrs)
+        ? ''
+        : all,
+  );
+  const quotedSheet = xml(sheetName.replace(/'/g, "''"));
+  const names = `<x:definedName name="_xlnm.Print_Area" localSheetId="${sheetId}">'${quotedSheet}'!$A$2:$${lastColumn}$${lastRow}</x:definedName><x:definedName name="_xlnm.Print_Titles" localSheetId="${sheetId}">'${quotedSheet}'!$6:$6</x:definedName>`;
+  return workbook.includes('<x:definedNames>')
+    ? workbook.replace('</x:definedNames>', names + '</x:definedNames>')
+    : workbook.replace('</x:sheets>', `</x:sheets><x:definedNames>${names}</x:definedNames>`);
+}
 function nativeStyle(style: CurveStyle) {
   const color = style.color.slice(1).toUpperCase();
   const fill = `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>`;
@@ -50,7 +87,12 @@ function nativeStyle(style: CurveStyle) {
 }
 
 /** Only our embedded, unprotected template is processed here; no uploaded workbooks are changed. */
-function fitHeader(sheet: string, files: ReturnType<typeof unzipSync>, labels: string[]) {
+function fitHeader(
+  sheet: string,
+  files: ReturnType<typeof unzipSync>,
+  labels: string[],
+  columns: string[],
+) {
   const path = 'xl/styles.xml';
   let styles = strFromU8(files[path]);
   const xfs = styles.match(/<x:cellXfs\b[^>]*>([\s\S]*?)<\/x:cellXfs>/);
@@ -77,7 +119,7 @@ function fitHeader(sheet: string, files: ReturnType<typeof unzipSync>, labels: s
     );
   files[path] = strToU8(styles);
   sheet = sheet.replace(
-    /<x:c\b([^>]*?\br="(?:A|B|D|E)6"[^>]*?)(\s*\/?>)/g,
+    new RegExp(`<x:c\\b([^>]*?\\br="(?:${columns.join('|')})6"[^>]*?)(\\s*\\/?>)`, 'g'),
     (_all, attrs: string, close: string) =>
       `<x:c${attrs.replace(/\s+s="[^"]*"/g, '')} s="${newStyle}"${close}`,
   );
@@ -88,6 +130,52 @@ function fitHeader(sheet: string, files: ReturnType<typeof unzipSync>, labels: s
     (_all, attrs: string) =>
       `<x:row${attrs.replace(/\s+(?:ht|customHeight)="[^"]*"/g, '')} ht="${height}" customHeight="1">`,
   );
+}
+
+function fitReportTable(
+  sheet: string,
+  files: ReturnType<typeof unzipSync>,
+  series: Point[][],
+  specs: string[][],
+) {
+  let styles = strFromU8(files['xl/styles.xml']).replace(/rgb="FFFFF8DF"/g, 'rgb="FFFFFFFF"');
+  const borderBlock = styles.match(/<x:borders\b[^>]*>([\s\S]*?)<\/x:borders>/)!;
+  const borderCount = (borderBlock[1].match(/<x:border\b/g) ?? []).length;
+  const border =
+    '<x:border><x:left style="thin"><x:color rgb="FFE2E8F0"/></x:left><x:right style="thin"><x:color rgb="FFE2E8F0"/></x:right><x:top style="thin"><x:color rgb="FFE2E8F0"/></x:top><x:bottom style="thin"><x:color rgb="FFE2E8F0"/></x:bottom><x:diagonal/></x:border>';
+  styles = styles.replace(
+    borderBlock[0],
+    `<x:borders count="${borderCount + 1}">${borderBlock[1]}${border}</x:borders>`,
+  );
+  const xfBlock = styles.match(/<x:cellXfs\b[^>]*>([\s\S]*?)<\/x:cellXfs>/)!;
+  const formats = xfBlock[1].match(/<x:xf\b[^>]*?(?:\s*\/>|>[\s\S]*?<\/x:xf>)/g)!;
+  const bodyStyle = formats.length;
+  formats.push(
+    `<x:xf numFmtId="200" fontId="1" fillId="0" borderId="${borderCount}" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><x:alignment horizontal="right" vertical="center" indent="1"/></x:xf>`,
+  );
+  styles = styles.replace(
+    xfBlock[0],
+    `<x:cellXfs count="${formats.length}">${formats.join('')}</x:cellXfs>`,
+  );
+  files['xl/styles.xml'] = strToU8(styles);
+  const lengths = new Map(
+    specs.flatMap((pair, index) => pair.map((column) => [column, series[index].length] as const)),
+  );
+  sheet = sheet.replace(
+    /<x:c\b([^>]*?\br="([A-Z]+)(\d+)"[^>]*?)(\s*\/?>)/g,
+    (all, attrs: string, column: string, row: string, close: string) => {
+      const length = lengths.get(column);
+      if (length === undefined || Number(row) < 7 || Number(row) >= length + 7) return all;
+      return `<x:c${attrs.replace(/\s+s="[^"]*"/g, '')} s="${bodyStyle}"${close}`;
+    },
+  );
+  sheet = sheet.replace(/showGridLines="[^"]*"/, 'showGridLines="0"');
+  sheet = sheet.replace(/<x:mergeCells\b[^>]*>[\s\S]*?<\/x:mergeCells>/g, '');
+  sheet = sheet.replace(
+    '</x:sheetData>',
+    '</x:sheetData><x:mergeCells count="3"><x:mergeCell ref="A2:Q2"/><x:mergeCell ref="A3:Q3"/><x:mergeCell ref="A4:Q4"/></x:mergeCells>',
+  );
+  return reportPrintSetup(sheet);
 }
 export function makeWorkbook(
   series: Point[][],
@@ -133,30 +221,55 @@ export function makeWorkbook(
     }
   }
   sheet = replaceCell(sheet, 'A2', options.title);
-  sheet = replaceCell(
-    sheet,
-    'A3',
-    '從第 7 列貼入 X / Y 數值。每條曲線最多 1,000 點，缺值保持空白。',
-  );
+  sheet = replaceCell(sheet, 'A3', `X：${labels.xLabel}；Y：${labels.yLabel}`);
   sheet = replaceCell(sheet, 'A4', `Source: ${source}${note.trim() ? ' / ' + note.trim() : ''}`);
-  sheet = replaceCell(
+  sheet = replaceCell(sheet, 'A5', null);
+  sheet = fitHeader(
     sheet,
-    'A5',
-    `改 A2 更新圖表標題，改 ${compare ? 'B6 / E6' : 'B6'} 更新曲線名稱。右鍵圖表「選取資料」；點曲線查看 SERIES 公式。`,
+    files,
+    [labels.xLabel, ...options.curves.map((curve) => curve.name)],
+    specs.flat(),
   );
-  sheet = fitHeader(sheet, files, [labels.xLabel, ...options.curves.map((curve) => curve.name)]);
+  sheet = fitReportTable(sheet, files, series, specs);
   sheet = sheet.replace(/<x:sheetProtection\b[^>]*(?:\s*\/>|>[\s\S]*?<\/x:sheetProtection>)/g, '');
   files[path] = strToU8(sheet);
+  const inactiveNumber = compare ? 1 : 2;
+  const inactiveName = compare ? 'Single' : 'TxBF';
+  const inactivePath = `xl/worksheets/sheet${inactiveNumber}.xml`;
+  const inactiveSpecs = compare
+    ? [['A', 'B']]
+    : [
+        ['A', 'B'],
+        ['D', 'E'],
+      ];
+  let inactiveSheet = strFromU8(files[inactivePath]);
+  inactiveSheet = replaceCell(inactiveSheet, 'A3', 'X：dB；Y：Throughput (Mbps)');
+  inactiveSheet = replaceCell(inactiveSheet, 'A5', null);
+  inactiveSheet = fitHeader(
+    inactiveSheet,
+    files,
+    ['dB', 'Throughput (Mbps)'],
+    inactiveSpecs.flat(),
+  );
+  inactiveSheet = fitReportTable(
+    inactiveSheet,
+    files,
+    inactiveSpecs.map(() => []),
+    inactiveSpecs,
+  );
+  files[inactivePath] = strToU8(inactiveSheet);
   // Keep both reusable worksheets, opening the active one on download.
   const workbook = strFromU8(files['xl/workbook.xml']);
-  files['xl/workbook.xml'] = strToU8(
-    workbook.includes('<x:bookViews>')
-      ? workbook.replace(/activeTab="\d+"/g, `activeTab="${number - 1}"`)
-      : workbook.replace(
-          '<x:sheets>',
-          `<x:bookViews><x:workbookView activeTab="${number - 1}"/></x:bookViews><x:sheets>`,
-        ),
-  );
+  let reportWorkbook = workbook.includes('<x:bookViews>')
+    ? workbook.replace(/activeTab="\d+"/g, `activeTab="${number - 1}"`)
+    : workbook.replace(
+        '<x:sheets>',
+        `<x:bookViews><x:workbookView activeTab="${number - 1}"/></x:bookViews><x:sheets>`,
+      );
+  const lastReportRow = Math.max(28, ...series.map((points) => points.length + 6));
+  reportWorkbook = reportPrintNames(reportWorkbook, name, number - 1, 'Q', lastReportRow);
+  reportWorkbook = reportPrintNames(reportWorkbook, inactiveName, inactiveNumber - 1, 'Q', 28);
+  files['xl/workbook.xml'] = strToU8(reportWorkbook);
   const chartPath = `xl/drawings/charts/chart${number}.xml`;
   let chart = strFromU8(files[chartPath]);
   chart = chart.replace(

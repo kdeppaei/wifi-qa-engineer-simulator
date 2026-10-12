@@ -8,21 +8,30 @@
 
 本專案目前維護兩項工具：[兩項工作的範圍與狀態](docs/tasks.md)。
 
-獨立的 **Excel 繪圖與表格工具 v1.3**：貼矩陣、按欄或按列選取 X／Y，支援單曲線與 TxBF ON／OFF，標題／曲線名稱／配色／線型／測點均可改寫。設定與曲線並排，可單獨捲動設定；「放大並固定預覽」讓小視窗也能邊調整邊看圖。新增 **Peak 結果表**，依 Band/Config、Channel 與 UL／DL／BI 展開資料列，Gain Criteria、SU、MU、Gain 全部手填，沒有自動計算或判定；欄名、順序、顯示、新增欄位、欄寬與外觀皆可自訂，下載原生可編輯 Excel 表格或空白表。既有圖表標題連結 A2、圖例連結 B6／E6，沒有工作表或圖表保護。圖片 OCR 尚未加入。[操作說明](docs/rvr-excel-guide.md)、[曲線範本](docs/rvr-excel-template.xlsx)及[Peak 範本](docs/peak-results-template.xlsx)。
+## 直接開啟，免安裝
 
-既有入口維持 `/rvr-excel.html` 與 `dist/rvr-excel-tool.html`，更新後確認顯示 v1.3。名稱擴充為通用繪圖與表格，Wi-Fi QA 模擬器仍是獨立的第一項工具。
+- [Excel 繪圖與表格工具](https://excel-chart-table-tools.kdeppaei2.chatgpt.site)：貼上數據、客製曲線或 Peak 結果表，下載可編輯 Excel 報告。
+- [Wi-Fi QA 虛擬實驗室](https://wifi-qa-virtual-lab.kdeppaei2.chatgpt.site)：操作 Tera Term、AP、衰減器與 MSP，使用逐步工作流練習故障排除。
+
+兩個網址皆公開，使用者不需要登入、安裝 Node.js 或執行 PowerShell／bat。貼上的量測資料與模擬進度在使用者自己的瀏覽器處理，網站沒有上傳量測資料的後端。Excel 工具重新整理會清空目前輸入，請先下載結果；模擬器在同一瀏覽器保存進度，可下載 JSON 快照跨瀏覽器交換。
+
+Excel 工具 v1.4 將「曲線繪圖／Peak 結果表」與曲線資料格式分層，提供三步提示、清楚的匯出工具列及進階設定展開。Excel 輸出使用報告版面：中性列底色、表格邊框、標題與條件、列印範圍與重複表頭；Peak 保留原生可編輯 Table，預設隱藏篩選箭頭，Gain 維持只手填。
+
+獨立的 **Excel 繪圖與表格工具 v1.4**：貼矩陣、按欄或按列選取 X／Y，支援單曲線與 TxBF ON／OFF，標題／曲線名稱／配色／線型／測點均可改寫。設定與曲線並排，可單獨捲動設定；「放大並固定預覽」讓小視窗也能邊調整邊看圖。新增 **Peak 結果表**，依 Band/Config、Channel 與 UL／DL／BI 展開資料列，Gain Criteria、SU、MU、Gain 全部手填，沒有自動計算或判定；欄名、順序、顯示、新增欄位、欄寬與外觀皆可自訂，下載原生可編輯 Excel 表格或空白表。既有圖表標題連結 A2、圖例連結 B6／E6，沒有工作表或圖表保護。圖片 OCR 尚未加入。[操作說明](docs/rvr-excel-guide.md)、[曲線範本](docs/rvr-excel-template.xlsx)及[Peak 範本](docs/peak-results-template.xlsx)。
+
+既有入口維持 `/rvr-excel.html` 與 `dist/rvr-excel-tool.html`，更新後確認顯示 v1.4。名稱擴充為通用繪圖與表格，Wi-Fi QA 模擬器仍是獨立的第一項工具。
 
 [RvR Excel 工具驗證紀錄](docs/rvr-excel-validation.md)
 
 ## 公開下載與 Fork
 
-[下載 Excel 繪圖與表格工具 v1.3](https://github.com/kdeppaei/wifi-qa-engineer-simulator/releases/tag/excel-tools-v1.3)：在 Assets 下載 `rvr-excel-tool.html`，用 Chrome／Edge 開啟即可離線使用；`rvr-excel-template.xlsx` 與 `peak-results-template.xlsx` 可直接在 Excel 填入資料。相同版本也附上 Wi-Fi QA 模擬器 `wifi-qa-lab.html`。
+[下載 Excel 繪圖與表格工具 v1.4](https://github.com/kdeppaei/wifi-qa-engineer-simulator/releases/tag/excel-tools-v1.4)：在 Assets 下載 `rvr-excel-tool.html`，用 Chrome／Edge 開啟即可離線使用；`rvr-excel-template.xlsx` 與 `peak-results-template.xlsx` 可直接在 Excel 填入資料。相同版本也附上 Wi-Fi QA 模擬器 `wifi-qa-lab.html`。
 
 使用 RvR 工具時，貼上 MSP 矩陣，核對擷取的 dB／Throughput 欄；比較 TxBF 時選 ON／OFF 模式，分別貼入兩組資料，再下載 Excel。欄名、起始行與欄號皆可修改。公開下載不包含使用者提供的原始 PDF、試算表或量測資料。
 
 要修改程式，按儲存庫右上角 **Fork**，再將自己的 Fork clone 到本機，依下方啟動步驟操作。RvR 工具程式位於 `src/rvrExcel/`，入口為 `rvr-excel.html`；Wi-Fi QA 模擬器與 RvR 工具共用此儲存庫，但各自有獨立入口。
 
-## 啟動
+## 開發者啟動
 
 需要 Node.js 22 或更新版本，以及 pnpm 10.26+（建議 pnpm 11）。
 

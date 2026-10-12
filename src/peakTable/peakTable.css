@@ -37,14 +37,20 @@
 }
 
 .peak-metadata {
-  margin: 20px 0;
+  margin: 18px 0;
 }
 
 .peak-groups {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 370px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 370px), 1fr));
   gap: 14px;
   margin-bottom: 14px;
+}
+
+@media (min-width: 1000px) {
+  .peak-metadata {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .peak-group {
@@ -52,7 +58,7 @@
   padding: 16px;
   border: 1px solid #dbe4ef;
   border-radius: 8px;
-  background: #f8fafd;
+  background: #fbfcfe;
 }
 
 .peak-group legend {
@@ -235,10 +241,89 @@
 }
 
 .peak-downloads {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 0;
+}
+
+.peak-downloads > button {
+  font-size: 13px;
+  padding: 10px 14px;
+}
+
+.peak-task-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #4f657b;
+  font-size: 12px;
+  align-items: center;
+}
+
+.peak-task-note span:first-child {
+  padding: 4px 9px;
+  background: #edf3fa;
+  border-radius: 4px;
+  color: #345777;
+  font-weight: 600;
+}
+
+.peak-results .peak-numeric,
+.peak-results .peak-numeric input {
+  text-align: right;
+}
+
+.peak-table-caption {
+  margin: 16px 0;
+  padding: 14px 16px;
+  background: #f8fafd;
+  border-left: 3px solid #cad7e6;
+}
+
+.peak-table-caption h3 {
+  margin-top: 0;
+}
+
+.peak-edit-table input:not(:focus) {
+  border-color: transparent;
+  background: transparent;
+}
+
+.peak-edit-table input:hover {
+  border-color: #bac9db;
+  background: #fff;
+}
+
+.peak-edit-table td:focus-within {
+  background: #e9f2fc;
+}
+
+.peak-directions label {
+  padding: 5px 8px;
+  border: 1px solid #dce3ea;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.peak-directions label:has(input:checked) {
+  background: #e9f2fc;
+  border-color: #b6d3ef;
+  color: #0b518b;
+}
+
+.peak-group-actions > button {
+  background: transparent;
+  border-color: transparent;
+  color: #64778a;
+  font-size: 12px;
+}
+
+.peak-group-actions > button:hover {
+  background: #fff2f2;
+  border-color: #efcccc;
+  color: #94363b;
 }
 
 @media (max-width: 900px) {
@@ -257,9 +342,16 @@
 
 @media (max-width: 600px) {
   .peak-metadata,
-  .peak-add-column,
-  .peak-downloads {
+  .peak-add-column {
     grid-template-columns: 1fr;
+  }
+
+  .peak-downloads {
+    width: 100%;
+  }
+
+  .peak-downloads > button {
+    width: 100%;
   }
 
   .peak-column {

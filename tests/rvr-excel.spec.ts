@@ -118,7 +118,7 @@ test('matrix paste uses left columns, allows mapping and exports renamed native 
   const files = unzipSync(readFileSync(file));
   const sheet = strFromU8(files['xl/worksheets/sheet1.xml']);
   expect(sheet).not.toContain('<x:pane');
-  expect(sheet).toContain('showGridLines="1"');
+  expect(sheet).toContain('showGridLines="0"');
   expect(sheet).toContain('RF loss (dB)');
   expect(strFromU8(files['xl/drawings/charts/chart1.xml'])).toContain('Measured rate (Mbps)');
   await page.locator('#data').fill('Rate\tLoss\tOther\n980\t0\t11\n900\t10\t10\n0\t90\t0');
