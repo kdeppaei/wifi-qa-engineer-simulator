@@ -8,13 +8,15 @@
 
 本專案目前維護兩項工具：[兩項工作的範圍與狀態](docs/tasks.md)。
 
-獨立的 **RvR Excel 繪圖工具 v1.2**：可直接貼 MSP 矩陣，按欄或按列選取 X／Y 與起訖範圍，支援 TxBF ON／OFF 比較、圖表大標題、曲線名稱／配色／線型／測點樣式、即時預覽與原生 Excel 圖表下載。Excel 圖表標題連結 A2、圖例連結 B6／E6，資料儲存格、數列來源與格式皆可繼續編輯；沒有工作表或圖表保護。取消凍結窗格並顯示格線。圖片 OCR 尚未加入。開發模式開啟 `/rvr-excel.html`；`pnpm build` 另產生可直接離線開啟的 `dist/rvr-excel-tool.html`。[操作說明](docs/rvr-excel-guide.md)及[可直接在 Excel 貼入資料的範本](docs/rvr-excel-template.xlsx)。
+獨立的 **Excel 繪圖與表格工具 v1.3**：貼矩陣、按欄或按列選取 X／Y，支援單曲線與 TxBF ON／OFF，標題／曲線名稱／配色／線型／測點均可改寫。設定與曲線並排，可單獨捲動設定；「放大並固定預覽」讓小視窗也能邊調整邊看圖。新增 **Peak 結果表**，依 Band/Config、Channel 與 UL／DL／BI 展開資料列，Gain Criteria、SU、MU、Gain 全部手填，沒有自動計算或判定；欄名、順序、顯示、新增欄位、欄寬與外觀皆可自訂，下載原生可編輯 Excel 表格或空白表。既有圖表標題連結 A2、圖例連結 B6／E6，沒有工作表或圖表保護。圖片 OCR 尚未加入。[操作說明](docs/rvr-excel-guide.md)、[曲線範本](docs/rvr-excel-template.xlsx)及[Peak 範本](docs/peak-results-template.xlsx)。
+
+既有入口維持 `/rvr-excel.html` 與 `dist/rvr-excel-tool.html`，更新後確認顯示 v1.3。名稱擴充為通用繪圖與表格，Wi-Fi QA 模擬器仍是獨立的第一項工具。
 
 [RvR Excel 工具驗證紀錄](docs/rvr-excel-validation.md)
 
 ## 公開下載與 Fork
 
-[下載 RvR Excel 工具 v1.2](https://github.com/kdeppaei/wifi-qa-engineer-simulator/releases/tag/rvr-excel-v1.2)：在 Assets 下載 `rvr-excel-tool.html`，用 Chrome／Edge 開啟即可離線使用；`rvr-excel-template.xlsx` 可直接在 Excel 填入資料。相同版本也附上 Wi-Fi QA 模擬器 `wifi-qa-lab.html`。
+[下載 Excel 繪圖與表格工具 v1.3](https://github.com/kdeppaei/wifi-qa-engineer-simulator/releases/tag/excel-tools-v1.3)：在 Assets 下載 `rvr-excel-tool.html`，用 Chrome／Edge 開啟即可離線使用；`rvr-excel-template.xlsx` 與 `peak-results-template.xlsx` 可直接在 Excel 填入資料。相同版本也附上 Wi-Fi QA 模擬器 `wifi-qa-lab.html`。
 
 使用 RvR 工具時，貼上 MSP 矩陣，核對擷取的 dB／Throughput 欄；比較 TxBF 時選 ON／OFF 模式，分別貼入兩組資料，再下載 Excel。欄名、起始行與欄號皆可修改。公開下載不包含使用者提供的原始 PDF、試算表或量測資料。
 

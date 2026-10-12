@@ -8,10 +8,12 @@
 
 持續維護方向：依真實操作回饋增加故障情境、診斷證據與工作流，不因開發 Task 2 而移除原有功能。
 
-## Task 2：MSP RvR Excel 繪圖工具
+## Task 2：Excel 繪圖與表格工具
 
-目前交付 v1.2。獨立輸入 dB／Throughput 或直接貼上 MSP 數值矩陣，預設擷取左上方第一組數據；可按欄或按列選 X／Y、指定起訖範圍、改寫欄名與座標軸。圖表大標題、曲線名稱、配色、線型、線寬、測點形狀／大小、圖例及格線均可自訂並帶到原生 Excel；Excel 改 A2 更新圖表標題、改 B6／E6 更新圖例，也可編輯 SERIES 來源與原生格式。支援 TxBF ON／OFF 共用三欄或各自兩欄、即時 XY 預覽、同 dB 比較、CSV／TSV 匯入。範本及下載檔沒有工作表／圖表保護，取消凍結窗格、顯示格線。每組最多 1,000 測點。圖片 OCR 尚未加入。
+目前交付 v1.3，名稱擴充為通用 Excel 繪圖與表格。既有矩陣選取、單曲線／TxBF ON／OFF、標題與曲線外觀、原生可編輯圖表匯出都保留。設定與圖表並排，可單獨捲動設定或使用放大固定預覽。
 
-入口：`dist/rvr-excel-tool.html`、開發伺服器 `/rvr-excel.html`、`docs/rvr-excel-template.xlsx`。量測來源由使用者標示，與模擬器狀態及存檔分開。操作方式與推薦優化見 `rvr-excel-guide.md`。
+新增 Peak 結果表，預設 Band/Config、Channel、Direction、Gain Criteria、SU、MU、Gain 七欄，依每組配置／頻道與 UL／DL／BI 展開資料列。Gain 依使用者要求只手填，不提供任何自動計算或判定。可改欄名、順序、顯示、欄寬、標題、來源、單位及外觀，新增手填欄；匯出原生 Excel Table 結果或空白表。每份最多 1,000 方向列、20 欄，切換頁籤與停用方向會保留目前頁面上的資料。圖片 OCR 尚未加入。
 
-優先優化：圖表設定儲存／匯入、SVG／PNG 報告圖片匯出、表格截圖 OCR 與校對、實際 MSP 報表區塊與測試條件辨識；再加入重測統計與 Excel 內差值／增益公式。
+入口：`dist/rvr-excel-tool.html`、開發伺服器 `/rvr-excel.html`、曲線範本 `docs/rvr-excel-template.xlsx` 及 Peak 範本 `docs/peak-results-template.xlsx`。既有檔名與網址保留。量測來源由使用者標示，與模擬器狀態及存檔分開。操作方式與推薦優化見 `rvr-excel-guide.md`。
+
+優先優化：設定範本儲存／匯入、Peak 多列貼上／CSV 匯入、SVG／PNG 報告圖片匯出、表格截圖 OCR 與校對。Peak 的 Gain 維持只手填。

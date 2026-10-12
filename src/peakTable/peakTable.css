@@ -1,0 +1,278 @@
+.peak-tool {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.peak-tool h2 {
+  margin-top: 0;
+}
+
+.peak-tool input:not([type='checkbox']),
+.peak-tool select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #bac9db;
+  border-radius: 6px;
+  padding: 9px;
+  margin-top: 6px;
+  font: inherit;
+  color: #172033;
+  background: #fff;
+}
+
+.peak-tool input[type='color'] {
+  height: 42px;
+  padding: 4px;
+}
+
+.peak-metadata,
+.peak-group-fields,
+.peak-style-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.peak-metadata {
+  margin: 20px 0;
+}
+
+.peak-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 370px), 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.peak-group {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #dbe4ef;
+  border-radius: 8px;
+  background: #f8fafd;
+}
+
+.peak-group legend {
+  padding: 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.peak-group-actions,
+.peak-directions,
+.peak-column-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.peak-group-actions {
+  justify-content: space-between;
+  margin-top: 8px;
+}
+
+.peak-directions label,
+.peak-checkbox,
+.peak-column-show {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.peak-removal {
+  color: #843c16;
+  font-size: 13px;
+  margin-top: 14px;
+  border: 1px solid #ecc8ad;
+  border-radius: 6px;
+  background: #fff7ef;
+  padding: 12px;
+}
+
+.peak-removal p {
+  margin-top: 0;
+}
+
+.peak-removal button + button {
+  margin-left: 8px;
+}
+
+.peak-column-list {
+  display: grid;
+  gap: 10px;
+}
+
+.peak-column {
+  display: grid;
+  grid-template-columns: 100px minmax(130px, 1fr) 110px 110px auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #e0e7ef;
+  border-radius: 7px;
+  background: #f8fafd;
+}
+
+.peak-column label {
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+.peak-column-actions {
+  gap: 5px;
+}
+
+.peak-add-column {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px auto;
+  align-items: end;
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.peak-add-column label {
+  margin-bottom: 0;
+}
+
+.peak-style-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: center;
+}
+
+.peak-table-caption h3 {
+  font-size: 20px;
+  line-height: 1.45;
+  margin: 12px 0 6px;
+  overflow-wrap: anywhere;
+}
+
+.peak-table-caption p {
+  margin: 6px 0;
+  line-height: 1.5;
+  font-size: 13px;
+  color: #526175;
+  overflow-wrap: anywhere;
+}
+
+.peak-table-scroll {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: auto;
+  max-height: 560px;
+  border: 1px solid #d7e0eb;
+  border-radius: 7px;
+}
+
+.peak-edit-table,
+.peak-preview-table {
+  width: 100%;
+  min-width: 850px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.peak-edit-table {
+  table-layout: fixed;
+}
+
+.peak-tool th,
+.peak-tool td {
+  text-align: left;
+  padding: 10px;
+  border-bottom: 1px solid #e1e7ef;
+  border-right: 1px solid #e1e7ef;
+  vertical-align: middle;
+}
+
+.peak-tool th {
+  position: sticky;
+  top: 0;
+  color: #fff;
+  z-index: 1;
+  overflow-wrap: anywhere;
+}
+
+.peak-tool td span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.peak-edit-table td {
+  padding: 6px;
+}
+
+.peak-edit-table input {
+  margin-top: 0 !important;
+  font-size: inherit;
+}
+
+.peak-banded tbody tr:nth-child(even) {
+  background: #f0f5fb;
+}
+
+.peak-tool .peak-preview {
+  margin-top: 18px;
+}
+
+.peak-errors {
+  margin: 18px 0;
+}
+
+.peak-errors p {
+  margin-top: 0;
+}
+
+.peak-errors ul {
+  margin-bottom: 0;
+  padding-left: 20px;
+}
+
+.peak-downloads {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 20px;
+}
+
+@media (max-width: 900px) {
+  .peak-column {
+    grid-template-columns: 90px minmax(0, 1fr) 100px;
+  }
+
+  .peak-column-actions {
+    grid-column: 2 / -1;
+  }
+
+  .peak-style-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .peak-metadata,
+  .peak-add-column,
+  .peak-downloads {
+    grid-template-columns: 1fr;
+  }
+
+  .peak-column {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .peak-column-show,
+  .peak-column-actions {
+    grid-column: 1 / -1;
+  }
+
+  .peak-group {
+    padding: 12px;
+  }
+}

@@ -226,3 +226,40 @@ test('column range and chart options remain independent between modes', async ({
   await expect(page.getByLabel('曲線 1 顏色', { exact: true })).toHaveValue('#222222');
   await expect(page.locator('.status')).toContainText('2 個量測點');
 });
+
+test('fixed preview stays visible while scrolling curve settings in a small desktop window', async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 858, height: 668 });
+  await page.goto(pathToFileURL(resolve('dist/rvr-excel-tool.html')).href);
+  await page.getByRole('button', { name: 'TxBF ON／OFF · 三欄' }).click();
+  await page.getByRole('button', { name: '載入示範' }).click();
+  const normalSettings = await page.locator('.chart-settings').boundingBox();
+  const normalPlot = await page.locator('.chart-plot').boundingBox();
+  expect(normalPlot!.x).toBeGreaterThan(normalSettings!.x + normalSettings!.width);
+  await page.getByRole('button', { name: '放大並固定預覽' }).click();
+  await expect(page.getByRole('dialog', { name: '曲線調整與固定預覽' })).toBeVisible();
+  await page.locator('.curve-settings summary').click();
+  const graph = page.getByRole('img');
+  await expect(graph).toBeInViewport({ ratio: 0.95 });
+  const before = await graph.boundingBox();
+  const bodyScroll = await page.evaluate(() => window.scrollY);
+  await page.getByLabel('曲線 2 測點大小', { exact: true }).scrollIntoViewIfNeeded();
+  await page.getByLabel('曲線 2 測點大小', { exact: true }).selectOption('9');
+  await page.getByLabel('曲線 2 線型', { exact: true }).selectOption('dash');
+  await expect(graph).toBeInViewport({ ratio: 0.95 });
+  expect((await graph.boundingBox())!.y).toBeCloseTo(before!.y, 0);
+  expect(await page.evaluate(() => window.scrollY)).toBe(bodyScroll);
+  expect(await page.locator('.chart-settings').evaluate((e) => e.scrollTop)).toBeGreaterThan(0);
+  await expect(page.locator('[data-curve="2"] > path')).toHaveAttribute('stroke-dasharray', '9 5');
+  await page.screenshot({ path: info.outputPath('fixed-preview-desktop.png') });
+  await page.getByLabel('曲線 2 線型', { exact: true }).press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: '放大並固定預覽' }).click();
+  await expect(graph).toBeInViewport({ ratio: 0.95 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.getByRole('button', { name: '結束放大編輯' }).click();
+});

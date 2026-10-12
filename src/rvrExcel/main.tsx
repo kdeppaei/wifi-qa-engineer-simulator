@@ -1,10 +1,11 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { matchedComparison, parseMatrix } from './data';
 import type { Point, MatrixOptions } from './data';
 import { makeWorkbook } from './workbook';
 import { defaultChartOptions } from './presentation';
 import type { ChartOptions, CurveStyle } from './presentation';
+import PeakTable from '../peakTable/PeakTable';
 import './style.css';
 
 type Mode = 'single' | 'common' | 'separate';
@@ -444,6 +445,20 @@ function Chart({
   );
 }
 function App() {
+  const [view, setView] = useState<'chart' | 'peak'>('chart');
+  const [expanded, setExpanded] = useState(false);
+  const workbench = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!expanded) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    workbench.current?.querySelector('button')?.focus();
+    return () => {
+      document.body.style.overflow = overflow;
+      previous?.focus();
+    };
+  }, [expanded]);
   const [mode, setMode] = useState<Mode>('single');
   const [single, setSingle] = useState('');
   const [common, setCommon] = useState('');
@@ -559,11 +574,11 @@ function App() {
     <main>
       <header>
         <div>
-          <span className="eyebrow">工具 02 · MSP 測試後處理</span>
-          <h1>RvR Excel 繪圖工具</h1>
-          <p>直接貼上 MSP 數值矩陣，預設擷取左上方 dB／Throughput，再下載 Excel。</p>
+          <span className="eyebrow">工具 02 · 量測資料整理</span>
+          <h1>Excel 繪圖與表格工具</h1>
+          <p>貼上數值矩陣繪圖，或依 Band／Config 建立 Peak 結果表，再下載可編輯的 Excel。</p>
         </div>
-        <span className="offline">離線使用 · v1.2</span>
+        <span className="offline">離線使用 · v1.3</span>
       </header>
       <nav aria-label="資料格式">
         {(
@@ -575,9 +590,10 @@ function App() {
         ).map(([key, title]) => (
           <button
             key={key}
-            aria-pressed={mode === key}
+            aria-pressed={view === 'chart' && mode === key}
             onClick={() => {
               setMode(key);
+              setView('chart');
               setMessage('');
               setFileError('');
             }}
@@ -585,312 +601,362 @@ function App() {
             {title}
           </button>
         ))}
+        <button aria-pressed={view === 'peak'} onClick={() => setView('peak')}>
+          Peak 結果表 · 七欄
+        </button>
       </nav>
-      <div className="workspace">
-        <section className="editor">
-          <h2>1. 貼上測試數據</h2>
-          <p>
-            {mode === 'common'
-              ? '每行：dB、ON Mbps、OFF Mbps。測不到的值可留空。'
-              : mode === 'separate'
-                ? 'ON、OFF 分別貼上兩欄。兩組可使用不同 dB 測點。'
-                : '可貼上整塊 MSP 矩陣。預設只擷取左上方前兩欄，右側其他數值不納入曲線。'}
-          </p>
-          <label htmlFor="data">
-            {mode === 'separate'
-              ? `TxBF ON 原始矩陣：${xLabel}／${yLabel}`
-              : mode === 'common'
-                ? `原始矩陣：${xLabel}／ON ${yLabel}／OFF ${yLabel}`
-                : `原始矩陣：${xLabel}／${yLabel}`}
-          </label>
-          <textarea
-            id="data"
-            spellCheck={false}
-            value={text}
-            onChange={(e) => changeText(e.target.value)}
-            placeholder={
-              mode === 'common'
-                ? 'dB\tON Mbps\tOFF Mbps\n0\t980\t950\n10\t920\t870'
-                : 'dB\tMbps\n0\t980\n10\t920\n20\t850'
-            }
-          />
-          <Mapping
-            value={mapping[mappingKey]}
-            count={mode === 'common' ? 3 : 2}
-            prefix={mode === 'separate' ? 'ON ' : ''}
-            xName={xLabel}
-            yName={yLabel}
-            onChange={(value) => setMapping((previous) => ({ ...previous, [mappingKey]: value }))}
-          />
-          {mode === 'separate' && (
-            <>
-              <label htmlFor="off">
-                TxBF OFF 原始矩陣：{xLabel}／{yLabel}
-              </label>
-              <textarea
-                id="off"
-                spellCheck={false}
-                value={off}
-                onChange={(e) => changeText(e.target.value, true)}
-                placeholder="dB&#9;Mbps"
+      <div hidden={view !== 'chart'}>
+        <div className="workspace">
+          <section className="editor">
+            <h2>1. 貼上測試數據</h2>
+            <p>
+              {mode === 'common'
+                ? '每行：dB、ON Mbps、OFF Mbps。測不到的值可留空。'
+                : mode === 'separate'
+                  ? 'ON、OFF 分別貼上兩欄。兩組可使用不同 dB 測點。'
+                  : '可貼上整塊 MSP 矩陣。預設只擷取左上方前兩欄，右側其他數值不納入曲線。'}
+            </p>
+            <label htmlFor="data">
+              {mode === 'separate'
+                ? `TxBF ON 原始矩陣：${xLabel}／${yLabel}`
+                : mode === 'common'
+                  ? `原始矩陣：${xLabel}／ON ${yLabel}／OFF ${yLabel}`
+                  : `原始矩陣：${xLabel}／${yLabel}`}
+            </label>
+            <textarea
+              id="data"
+              spellCheck={false}
+              value={text}
+              onChange={(e) => changeText(e.target.value)}
+              placeholder={
+                mode === 'common'
+                  ? 'dB\tON Mbps\tOFF Mbps\n0\t980\t950\n10\t920\t870'
+                  : 'dB\tMbps\n0\t980\n10\t920\n20\t850'
+              }
+            />
+            <Mapping
+              value={mapping[mappingKey]}
+              count={mode === 'common' ? 3 : 2}
+              prefix={mode === 'separate' ? 'ON ' : ''}
+              xName={xLabel}
+              yName={yLabel}
+              onChange={(value) => setMapping((previous) => ({ ...previous, [mappingKey]: value }))}
+            />
+            {mode === 'separate' && (
+              <>
+                <label htmlFor="off">
+                  TxBF OFF 原始矩陣：{xLabel}／{yLabel}
+                </label>
+                <textarea
+                  id="off"
+                  spellCheck={false}
+                  value={off}
+                  onChange={(e) => changeText(e.target.value, true)}
+                  placeholder="dB&#9;Mbps"
+                />
+                <Mapping
+                  value={mapping.off}
+                  count={2}
+                  prefix="OFF "
+                  xName={xLabel}
+                  yName={yLabel}
+                  onChange={(value) => setMapping((previous) => ({ ...previous, off: value }))}
+                />
+              </>
+            )}
+            <div className="row">
+              <button className="secondary" onClick={() => input.current?.click()}>
+                匯入 CSV／TSV
+              </button>
+              <button className="secondary" onClick={demo}>
+                載入示範
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setSingle('');
+                  setCommon('');
+                  setOn('');
+                  setOff('');
+                  setMetadata(defaultMetadata());
+                  setPresentation(defaultPresentation());
+                  setMapping({ single: {}, common: {}, on: {}, off: {} });
+                  setFileError('');
+                  setMessage('');
+                }}
+              >
+                清空全部
+              </button>
+            </div>
+            <input
+              ref={input}
+              hidden
+              type="file"
+              accept=".csv,.tsv,.txt"
+              onChange={(e) => {
+                void loadFile(e.target.files?.[0]);
+                e.target.value = '';
+              }}
+            />
+            <label className="check">
+              <input type="checkbox" checked={sort} onChange={(e) => setSort(e.target.checked)} />按
+              X 排序（整組數據一起排序）
+            </label>
+            <div className="metadata">
+              <div className="mapping-grid">
+                <label htmlFor="x-label">
+                  X 欄名稱
+                  <input
+                    id="x-label"
+                    maxLength={60}
+                    value={xLabel}
+                    onChange={(e) =>
+                      setMetadata((previous) => ({
+                        ...previous,
+                        [mode]: { ...previous[mode], xLabel: e.target.value },
+                      }))
+                    }
+                  />
+                </label>
+                <label htmlFor="y-label">
+                  Y 欄名稱與單位
+                  <input
+                    id="y-label"
+                    maxLength={60}
+                    value={yLabel}
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      if (mode === 'single' && options.curves[0].name === yLabel)
+                        setPresentation((previous) => ({
+                          ...previous,
+                          single: {
+                            ...previous.single,
+                            curves: [{ ...previous.single.curves[0], name }],
+                          },
+                        }));
+                      setMetadata((previous) => ({
+                        ...previous,
+                        [mode]: { ...previous[mode], yLabel: name },
+                      }));
+                    }}
+                  />
+                </label>
+              </div>
+              <label htmlFor="source">數據來源</label>
+              <select id="source" value={source} onChange={(e) => setSource(e.target.value)}>
+                <option>使用者提供數據（未驗證量測來源）</option>
+                <option>使用者匯入檔案（未驗證量測來源）</option>
+                <option>MSP 實機量測（使用者標示）</option>
+                <option>模擬器數據（SIMULATED）</option>
+                <option>示範數據（非實機量測）</option>
+              </select>
+              <label htmlFor="note">測試名稱／條件（選填）</label>
+              <input
+                id="note"
+                maxLength={300}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="例如 5 GHz · TCP DL · 4 streams"
               />
-              <Mapping
-                value={mapping.off}
-                count={2}
-                prefix="OFF "
-                xName={xLabel}
-                yName={yLabel}
-                onChange={(value) => setMapping((previous) => ({ ...previous, off: value }))}
-              />
-            </>
-          )}
-          <div className="row">
-            <button className="secondary" onClick={() => input.current?.click()}>
-              匯入 CSV／TSV
-            </button>
-            <button className="secondary" onClick={demo}>
-              載入示範
-            </button>
-            <button
-              className="secondary"
-              onClick={() => {
-                setSingle('');
-                setCommon('');
-                setOn('');
-                setOff('');
-                setMetadata(defaultMetadata());
-                setPresentation(defaultPresentation());
-                setMapping({ single: {}, common: {}, on: {}, off: {} });
-                setFileError('');
-                setMessage('');
+            </div>
+            {fileError && (
+              <p role="alert" className="error">
+                {fileError}
+              </p>
+            )}
+            {result.status === 'error' && (
+              <p role="alert" className="error">
+                {result.error}
+              </p>
+            )}
+            <p className="hint">
+              支援 Tab、逗號、分號或空白分隔。每條曲線最多 1,000 點。空白不補 0，重複 X
+              會提示處理。自動模式擷取第一組連續數據，也可指定 X／Y 行或欄與完整起訖範圍。圖片 OCR
+              尚未加入。
+            </p>
+          </section>
+          <section className="preview">
+            <h2>2. 檢查曲線並下載 Excel</h2>
+            <div
+              ref={workbench}
+              className={`chart-workbench${expanded ? ' chart-workbench-full' : ''}`}
+              role={expanded ? 'dialog' : undefined}
+              aria-modal={expanded || undefined}
+              aria-label={expanded ? '曲線調整與固定預覽' : undefined}
+              onKeyDown={(event) => {
+                if (!expanded) return;
+                if (event.key === 'Escape') setExpanded(false);
+                if (event.key === 'Tab') {
+                  const nodes = Array.from(
+                    workbench.current?.querySelectorAll<HTMLElement>(
+                      'button,input,select,textarea,summary',
+                    ) ?? [],
+                  ).filter((node) => node.offsetParent !== null && !node.hasAttribute('disabled'));
+                  const first = nodes[0],
+                    last = nodes.at(-1);
+                  if (
+                    (!event.shiftKey && document.activeElement === last) ||
+                    (event.shiftKey && document.activeElement === first)
+                  ) {
+                    event.preventDefault();
+                    (event.shiftKey ? last : first)?.focus();
+                  }
+                }
               }}
             >
-              清空全部
-            </button>
-          </div>
-          <input
-            ref={input}
-            hidden
-            type="file"
-            accept=".csv,.tsv,.txt"
-            onChange={(e) => {
-              void loadFile(e.target.files?.[0]);
-              e.target.value = '';
-            }}
-          />
-          <label className="check">
-            <input type="checkbox" checked={sort} onChange={(e) => setSort(e.target.checked)} />按 X
-            排序（整組數據一起排序）
-          </label>
-          <div className="metadata">
-            <div className="mapping-grid">
-              <label htmlFor="x-label">
-                X 欄名稱
-                <input
-                  id="x-label"
-                  maxLength={60}
-                  value={xLabel}
-                  onChange={(e) =>
-                    setMetadata((previous) => ({
-                      ...previous,
-                      [mode]: { ...previous[mode], xLabel: e.target.value },
-                    }))
+              <div className="workbench-bar">
+                <span>邊調整，邊看曲線</span>
+                <button className="secondary" onClick={() => setExpanded(!expanded)}>
+                  {expanded ? '結束放大編輯' : '放大並固定預覽'}
+                </button>
+              </div>
+              <div className="chart-settings">
+                <Appearance
+                  value={options}
+                  onChange={(value) =>
+                    setPresentation((previous) => ({ ...previous, [mode]: value }))
                   }
                 />
-              </label>
-              <label htmlFor="y-label">
-                Y 欄名稱與單位
-                <input
-                  id="y-label"
-                  maxLength={60}
-                  value={yLabel}
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    if (mode === 'single' && options.curves[0].name === yLabel)
-                      setPresentation((previous) => ({
-                        ...previous,
-                        single: {
-                          ...previous.single,
-                          curves: [{ ...previous.single.curves[0], name }],
-                        },
-                      }));
-                    setMetadata((previous) => ({
-                      ...previous,
-                      [mode]: { ...previous[mode], yLabel: name },
-                    }));
-                  }}
-                />
-              </label>
+              </div>
+              <div className="chart-plot">
+                {result.status === 'ready' ? (
+                  <Chart
+                    series={result.series}
+                    options={options}
+                    xLabel={xLabel || 'dB'}
+                    yLabel={yLabel || 'Throughput (Mbps)'}
+                  />
+                ) : (
+                  <div className="empty">
+                    貼上數據後，曲線會即時出現在這裡。
+                    <br />
+                    也可以先按「載入示範」查看操作。
+                  </div>
+                )}
+              </div>
             </div>
-            <label htmlFor="source">數據來源</label>
-            <select id="source" value={source} onChange={(e) => setSource(e.target.value)}>
-              <option>使用者提供數據（未驗證量測來源）</option>
-              <option>使用者匯入檔案（未驗證量測來源）</option>
-              <option>MSP 實機量測（使用者標示）</option>
-              <option>模擬器數據（SIMULATED）</option>
-              <option>示範數據（非實機量測）</option>
-            </select>
-            <label htmlFor="note">測試名稱／條件（選填）</label>
-            <input
-              id="note"
-              maxLength={300}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="例如 5 GHz · TCP DL · 4 streams"
-            />
-          </div>
-          {fileError && (
-            <p role="alert" className="error">
-              {fileError}
-            </p>
-          )}
-          {result.status === 'error' && (
-            <p role="alert" className="error">
-              {result.error}
-            </p>
-          )}
-          <p className="hint">
-            支援 Tab、逗號、分號或空白分隔。每條曲線最多 1,000 點。空白不補 0，重複 X
-            會提示處理。自動模式擷取第一組連續數據，也可指定 X／Y 行或欄與完整起訖範圍。圖片 OCR
-            尚未加入。
-          </p>
-        </section>
-        <section className="preview">
-          <h2>2. 檢查曲線並下載 Excel</h2>
-          <Appearance
-            value={options}
-            onChange={(value) => setPresentation((previous) => ({ ...previous, [mode]: value }))}
-          />
-          {result.status === 'ready' ? (
-            <>
-              <p className="status">
-                {result.series
-                  .map(
-                    (p, i) => `${labels[i]}：${p.filter((v) => v.mbps !== null).length} 個量測點`,
-                  )
-                  .join(' · ')}
-                {result.missing ? ` · ${result.missing} 個空白值（曲線斷開）` : ''}
-                {result.reordered ? ' · 已依 X 排序' : ''}
-              </p>
-              {result.selections.map((selection, i) => (
-                <p className="selection-info" key={i}>
-                  {mode === 'separate' ? `${i === 0 ? 'ON' : 'OFF'}：` : ''}
-                  {selection.orientation === 'rows'
-                    ? `按列擷取：X／Y 使用第 ${selection.selectedRows.join('、')} 行，第 ${selection.startColumn}–${selection.endColumn} 欄。`
-                    : `從第 ${selection.startRow} 行擷取，第 ${selection.columns.join('、')} 欄，到第 ${selection.endRow} 行。`}
-                  {selection.ignoredColumns > 0
-                    ? `右側／未選取 ${selection.ignoredColumns} 欄不納入曲線。`
-                    : ''}
-                  {selection.remainingRows > 0 ? `另有 ${selection.remainingRows} 行未匯入。` : ''}
+            {result.status === 'ready' && (
+              <>
+                <p className="status">
+                  {result.series
+                    .map(
+                      (p, i) => `${labels[i]}：${p.filter((v) => v.mbps !== null).length} 個量測點`,
+                    )
+                    .join(' · ')}
+                  {result.missing ? ` · ${result.missing} 個空白值（曲線斷開）` : ''}
+                  {result.reordered ? ' · 已依 X 排序' : ''}
                 </p>
-              ))}
-              <Chart
-                series={result.series}
-                options={options}
-                xLabel={xLabel || 'dB'}
-                yLabel={yLabel || 'Throughput (Mbps)'}
-              />
-              <details>
-                <summary>核對已擷取欄位</summary>
+                {result.selections.map((selection, i) => (
+                  <p className="selection-info" key={i}>
+                    {mode === 'separate' ? `${i === 0 ? 'ON' : 'OFF'}：` : ''}
+                    {selection.orientation === 'rows'
+                      ? `按列擷取：X／Y 使用第 ${selection.selectedRows.join('、')} 行，第 ${selection.startColumn}–${selection.endColumn} 欄。`
+                      : `從第 ${selection.startRow} 行擷取，第 ${selection.columns.join('、')} 欄，到第 ${selection.endRow} 行。`}
+                    {selection.ignoredColumns > 0
+                      ? `右側／未選取 ${selection.ignoredColumns} 欄不納入曲線。`
+                      : ''}
+                    {selection.remainingRows > 0
+                      ? `另有 ${selection.remainingRows} 行未匯入。`
+                      : ''}
+                  </p>
+                ))}
+                <details>
+                  <summary>核對已擷取欄位</summary>
+                  <div className="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>曲線</th>
+                          <th>{xLabel}</th>
+                          <th>{yLabel}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.series.flatMap((points, s) =>
+                          points.slice(0, 20).map((p, i) => (
+                            <tr key={`${s}-${i}`}>
+                              <td>{labels[s]}</td>
+                              <td>{p.db}</td>
+                              <td>{p.mbps ?? '空白'}</td>
+                            </tr>
+                          )),
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="hint">顯示每組前 20 行供核對；下載包含全部擷取測點。</p>
+                </details>
+              </>
+            )}
+            <button
+              className="download"
+              disabled={
+                result.status !== 'ready' || !xLabel.trim() || !yLabel.trim() || !appearanceValid
+              }
+              onClick={download}
+            >
+              下載 Excel 原生圖表 .xlsx
+            </button>
+            <p className="hint">
+              Excel 的 Single 工作表用 A／B 欄；TxBF 工作表用 A／B（ON）與 D／E（OFF）。從第 7
+              行開始，修改資料後圖表會更新。換一輪測試前先清除舊測點。 改 A2 更新圖表標題，改 B6／E6
+              更新圖例。右鍵曲線可「設定數列格式」；右鍵圖表可「選取資料」。 點選曲線後，Excel
+              公式列可查看 SERIES 資料來源。圖表與工作表均未設保護。
+            </p>
+            <details className="excel-help">
+              <summary>Excel 無法編輯時的檢查方式</summary>
+              <p className="hint">
+                若 Excel 顯示「受保護的檢視」，確認檔案是自己的匯出後按「啟用編輯」。若顯示 Office
+                授權過期或未啟用，需處理 Office
+                授權，網站無法解除此限制。一般模式下點一下圖表，再點曲線可調整格式；圖表標題亦可直接編輯。修改後另存
+                .xlsx。
+              </p>
+            </details>
+            {message && (
+              <p role="status" className="message">
+                {message}
+              </p>
+            )}
+            {mode !== 'single' && result.status === 'ready' && (
+              <details open className="comparison">
+                <summary>同 dB 的 ON／OFF 比較（{comparison.length} 點）</summary>
+                <p className="hint">
+                  僅比較兩組皆有量測值的相同 dB；不插值。比較時請保持其他測試條件一致。OFF 為 0
+                  時不計算百分比。
+                </p>
                 <div className="table-scroll">
                   <table>
                     <thead>
                       <tr>
-                        <th>曲線</th>
                         <th>{xLabel}</th>
-                        <th>{yLabel}</th>
+                        <th>ON {yLabel}</th>
+                        <th>OFF {yLabel}</th>
+                        <th>差值 {yLabel}</th>
+                        <th>增益 %</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {result.series.flatMap((points, s) =>
-                        points.slice(0, 20).map((p, i) => (
-                          <tr key={`${s}-${i}`}>
-                            <td>{labels[s]}</td>
-                            <td>{p.db}</td>
-                            <td>{p.mbps ?? '空白'}</td>
-                          </tr>
-                        )),
-                      )}
+                      {comparison.map((p) => (
+                        <tr key={p.db}>
+                          <td>{p.db}</td>
+                          <td>{p.on}</td>
+                          <td>{p.off}</td>
+                          <td>{Number(p.delta.toFixed(3))}</td>
+                          <td>{p.gain === null ? '—' : Number(p.gain.toFixed(2))}</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
-                <p className="hint">顯示每組前 20 行供核對；下載包含全部擷取測點。</p>
               </details>
-            </>
-          ) : (
-            <div className="empty">
-              貼上數據後，曲線會即時出現在這裡。
-              <br />
-              也可以先按「載入示範」查看操作。
-            </div>
-          )}
-          <button
-            className="download"
-            disabled={
-              result.status !== 'ready' || !xLabel.trim() || !yLabel.trim() || !appearanceValid
-            }
-            onClick={download}
-          >
-            下載 Excel 原生圖表 .xlsx
-          </button>
-          <p className="hint">
-            Excel 的 Single 工作表用 A／B 欄；TxBF 工作表用 A／B（ON）與 D／E（OFF）。從第 7
-            行開始，修改資料後圖表會更新。換一輪測試前先清除舊測點。 改 A2 更新圖表標題，改 B6／E6
-            更新圖例。右鍵曲線可「設定數列格式」；右鍵圖表可「選取資料」。 點選曲線後，Excel
-            公式列可查看 SERIES 資料來源。圖表與工作表均未設保護。
-          </p>
-          <details className="excel-help">
-            <summary>Excel 無法編輯時的檢查方式</summary>
-            <p className="hint">
-              若 Excel 顯示「受保護的檢視」，確認檔案是自己的匯出後按「啟用編輯」。若顯示 Office
-              授權過期或未啟用，需處理 Office
-              授權，網站無法解除此限制。一般模式下點一下圖表，再點曲線可調整格式；圖表標題亦可直接編輯。修改後另存
-              .xlsx。
-            </p>
-          </details>
-          {message && (
-            <p role="status" className="message">
-              {message}
-            </p>
-          )}
-          {mode !== 'single' && result.status === 'ready' && (
-            <details open className="comparison">
-              <summary>同 dB 的 ON／OFF 比較（{comparison.length} 點）</summary>
-              <p className="hint">
-                僅比較兩組皆有量測值的相同 dB；不插值。比較時請保持其他測試條件一致。OFF 為 0
-                時不計算百分比。
-              </p>
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{xLabel}</th>
-                      <th>ON {yLabel}</th>
-                      <th>OFF {yLabel}</th>
-                      <th>差值 {yLabel}</th>
-                      <th>增益 %</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {comparison.map((p) => (
-                      <tr key={p.db}>
-                        <td>{p.db}</td>
-                        <td>{p.on}</td>
-                        <td>{p.off}</td>
-                        <td>{Number(p.delta.toFixed(3))}</td>
-                        <td>{p.gain === null ? '—' : Number(p.gain.toFixed(2))}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
-          )}
-        </section>
+            )}
+          </section>
+        </div>
       </div>
-      <footer>
-        本工具不連線到 AP 或 MSP。使用你貼入的量測資料繪圖，圖表連線僅表示相鄰測點的趨勢。
-      </footer>
+      <div hidden={view !== 'peak'}>
+        <PeakTable />
+      </div>
+      <footer>使用你輸入的資料整理曲線與表格。繪圖使用原始測點，Peak 的 Gain 完全由你手填。</footer>
     </main>
   );
 }
