@@ -6,6 +6,7 @@
 
 - 165 項單元測試通過：原模擬器 99、RvR 既有 28、新矩陣解析 31、原生圖表外觀 7。TypeScript、正式打包、ESLint 通過。
 - 23 項瀏覽器測試通過：原模擬器 16、新工具 7。新工具驗證離線無網路請求、標題／圖例、顏色／線型／測點、原生匯出、橫向矩陣與起訖範圍、各模式保留各自設定及 390px 無頁面溢出。
+- GitHub 初次驗證的舊指令選單測試太早讀取上一筆 `quit` 輸出；補上確認選定範本與等待實際 `Connected` 輸出，3 次本機重複驗證通過。修正只影響測試等待，未修改模擬器或發行資產。
 - 範本以 Artifact Tool 編輯說明、欄名與標題格式，補回原生 XY、標題／圖例儲存格引用與缺值 gap。沒有把曲線換成圖片或補造數值。渲染檢查空白範本與實際下載的兩個工作表；透過 Artifact Tool 核對標題、來源與量測點。
 - 本機 Windows Excel 開啟實際瀏覽器下載的自訂檔，ChartType=74，標題公式 `=TxBF!$A$2`，ON 公式 `=SERIES(TxBF!$B$6,TxBF!$A$7:$A$1006,TxBF!$B$7:$B$1006,1)`。ReadOnly=False、ProtectContents=False、ProtectDrawingObjects=False、ProtectedViewWindows=0。
 - 在獨立 Excel 副本中改 A2、B6、B7=123.5，標題、圖例與量測曲線實際更新。線條顏色／線寬／虛線、三角形測點／大小及 SERIES X／Y 範圍可修改。此機的現代 `Format.Line` COM 介面拒絕存取，改用原生 `Border` 介面完成格式驗證。

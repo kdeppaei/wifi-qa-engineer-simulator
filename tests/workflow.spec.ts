@@ -244,11 +244,12 @@ test('command picker dispatches to the right terminal and guards wpa_cli shell m
   expect((await saved(page)).linux.mode).toBe('shell');
   await page.getByLabel('指令分類', { exact: true }).selectOption('linux');
   await page.getByLabel('常用指令', { exact: true }).selectOption('vt-link');
+  await expect(page.getByLabel('常用指令內容', { exact: true })).toHaveValue('iw dev stamld0 link');
   await page
     .locator('.panel-workflow')
     .getByRole('button', { name: '執行選定指令', exact: true })
     .click();
-  expect(await terminalOutput(page)).toContain('Connected');
+  await expect.poll(() => terminalOutput(page)).toContain('Connected');
 });
 
 test('errors and disconnected links never mark a workflow step successful', async ({ page }) => {
