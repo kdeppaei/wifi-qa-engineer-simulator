@@ -122,9 +122,107 @@ test('matrix paste uses left columns, allows mapping and exports renamed native 
   expect(sheet).toContain('RF loss (dB)');
   expect(strFromU8(files['xl/drawings/charts/chart1.xml'])).toContain('Measured rate (Mbps)');
   await page.locator('#data').fill('Rate\tLoss\tOther\n980\t0\t11\n900\t10\t10\n0\t90\t0');
-  await page.locator('.mapping summary').click();
   await page.getByLabel('第 1 欄位置', { exact: true }).fill('2');
   await page.getByLabel('第 2 欄位置', { exact: true }).fill('1');
   await expect(page.locator('.selection-info')).toContainText('第 2、1 欄');
   await page.screenshot({ path: info.outputPath('matrix-mapping-preview.png'), fullPage: true });
+});
+
+test('custom title, legend, markers and lines are shared by preview and editable native chart', async ({
+  page,
+}, info) => {
+  const requests: string[] = [];
+  page.on('request', (r) => {
+    if (/^https?:/.test(r.url())) requests.push(r.url());
+  });
+  await page.goto(pathToFileURL(resolve('dist/rvr-excel-tool.html')).href);
+  await page.getByRole('button', { name: 'TxBF ON／OFF · 三欄' }).click();
+  await page.getByRole('button', { name: '載入示範' }).click();
+  await page.locator('#chart-title').fill('5 GHz DL — TxBF comparison <test> & rate');
+  await page.locator('#note').fill('Measurement condition, distinct from title');
+  await page.locator('.curve-settings summary').click();
+  await page.getByLabel('曲線 1 名稱', { exact: true }).fill('BF enabled');
+  await page.getByLabel('曲線 1 顏色', { exact: true }).fill('#008855');
+  await page.getByLabel('曲線 1 線型', { exact: true }).selectOption('dash');
+  await page.getByLabel('曲線 1 線寬', { exact: true }).selectOption('3');
+  await page.getByLabel('曲線 1 測點樣式', { exact: true }).selectOption('diamond');
+  await page.getByLabel('曲線 1 測點大小', { exact: true }).selectOption('7');
+  await page.getByLabel('曲線 2 線型', { exact: true }).selectOption('none');
+  await page.getByLabel('曲線 2 測點樣式', { exact: true }).selectOption('square');
+  await page.getByLabel('顯示圖表格線', { exact: true }).uncheck();
+  await expect(page.locator('.chart-title')).toHaveText('5 GHz DL — TxBF comparison <test> & rate');
+  await expect(page.locator('[data-curve="1"] > path')).toHaveAttribute('stroke', '#008855');
+  await expect(page.locator('[data-curve="1"] > path')).toHaveAttribute('stroke-dasharray', '9 5');
+  await expect(page.locator('[data-curve="1"] [data-marker="diamond"]')).toHaveCount(7);
+  await expect(page.locator('[data-curve="2"] > path')).toHaveCount(0);
+  const event = page.waitForEvent('download');
+  await page.getByRole('button', { name: '下載 Excel 原生圖表 .xlsx' }).click();
+  const file = info.outputPath('custom-editable.xlsx');
+  await (await event).saveAs(file);
+  const files = unzipSync(readFileSync(file));
+  const chart = strFromU8(files['xl/drawings/charts/chart2.xml']);
+  expect(chart).toContain("'TxBF'!$A$2");
+  expect(chart).toContain("'TxBF'!$B$6");
+  expect(chart).toContain('5 GHz DL — TxBF comparison &lt;test&gt; &amp; rate');
+  expect(chart).toContain('008855');
+  expect(chart).toContain('prstDash val="dash"');
+  expect(chart).toContain('symbol val="diamond"');
+  expect(chart).not.toContain('majorGridlines');
+  expect(strFromU8(files['xl/worksheets/sheet2.xml'])).not.toContain('sheetProtection');
+  await page.screenshot({ path: info.outputPath('custom-style-preview.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.getByLabel('曲線 2 測點樣式', { exact: true }).selectOption('none');
+  await expect(page.getByRole('button', { name: '下載 Excel 原生圖表 .xlsx' })).toBeDisabled();
+  expect(requests).toEqual([]);
+});
+
+test('row orientation maps X and Y across columns with an inclusive selected range', async ({
+  page,
+}, info) => {
+  await page.goto('/rvr-excel.html');
+  await page
+    .locator('#data')
+    .fill('MSP report\nRate\t980\t900\t\t0\t123\nLoss\t0\t10\t50\t90\t100\nOther\t11\t10\t5\t0\t9');
+  await page.getByLabel('資料排列方式', { exact: true }).selectOption('rows');
+  await page.getByLabel('第 1 行位置', { exact: true }).fill('3');
+  await page.getByLabel('第 2 行位置', { exact: true }).fill('2');
+  await page.getByLabel('資料起始欄', { exact: true }).fill('2');
+  await page.getByLabel('資料結束欄', { exact: true }).fill('5');
+  await expect(page.locator('.selection-info')).toContainText('第 3、2 行，第 2–5 欄');
+  await expect(page.locator('.status')).toContainText('3 個量測點');
+  await expect(page.locator('.status')).toContainText('1 個空白值');
+  const event = page.waitForEvent('download');
+  await page.getByRole('button', { name: '下載 Excel 原生圖表 .xlsx' }).click();
+  const file = info.outputPath('horizontal-selection.xlsx');
+  await (await event).saveAs(file);
+  const sheet = strFromU8(unzipSync(readFileSync(file))['xl/worksheets/sheet1.xml']);
+  expect(sheet).toMatch(/r="A10"[^>]*><x:v>90<\/x:v>/);
+  expect(sheet).toMatch(/r="B9"[^>]*\/>/);
+  expect(sheet).toMatch(/r="B10"[^>]*><x:v>0<\/x:v>/);
+  expect(sheet).not.toMatch(/r="A11"[^>]*><x:v>/);
+  await page.getByLabel('資料結束欄', { exact: true }).fill('6');
+  await expect(page.locator('.status')).toContainText('4 個量測點');
+});
+
+test('column range and chart options remain independent between modes', async ({ page }) => {
+  await page.goto('/rvr-excel.html');
+  await page
+    .locator('#data')
+    .fill('Caption\nRate\tLoss\tOther\n980\t0\t11\n900\t10\t10\n500\t20\t9');
+  await page.getByLabel('第 1 欄位置', { exact: true }).fill('2');
+  await page.getByLabel('第 2 欄位置', { exact: true }).fill('1');
+  await page.getByLabel('資料起始行', { exact: true }).fill('3');
+  await page.getByLabel('資料結束行', { exact: true }).fill('4');
+  await expect(page.locator('.status')).toContainText('2 個量測點');
+  await page.locator('#chart-title').fill('Single custom title');
+  await page.getByRole('button', { name: '黑白列印' }).click();
+  await page.getByRole('button', { name: 'TxBF ON／OFF · 三欄' }).click();
+  await expect(page.locator('#chart-title')).toHaveValue('TxBF ON / OFF RvR');
+  await page.getByRole('button', { name: '單條曲線 · 兩欄' }).click();
+  await expect(page.locator('#chart-title')).toHaveValue('Single custom title');
+  await expect(page.getByLabel('曲線 1 顏色', { exact: true })).toHaveValue('#222222');
+  await expect(page.locator('.status')).toContainText('2 個量測點');
 });

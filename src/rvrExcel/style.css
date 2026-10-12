@@ -18,6 +18,77 @@
   border-radius: 6px;
   padding: 9px;
 }
+.mapping select,
+.appearance input,
+.appearance select {
+  width: 100%;
+  font: inherit;
+  margin-top: 8px;
+  border: 1px solid #bac9db;
+  border-radius: 6px;
+  padding: 9px;
+  background: white;
+}
+.appearance input[type='color'] {
+  height: 42px;
+  padding: 4px;
+}
+.mapping-orientation {
+  margin: 14px 0;
+}
+.appearance {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+.appearance > label {
+  margin-top: 16px;
+}
+.curve-style {
+  min-width: 0;
+  margin: 16px 0;
+  border: 1px solid #dfe6ef;
+  border-radius: 7px;
+  padding: 14px;
+}
+.curve-style legend {
+  font-size: 14px;
+  padding: 0 6px;
+  font-weight: 600;
+}
+.curve-style .mapping-grid {
+  margin-bottom: 0;
+}
+.appearance .check {
+  margin-top: 4px;
+}
+.curves {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 12px;
+}
+.curve-settings {
+  margin-top: 18px;
+  margin-bottom: 16px;
+}
+.appearance input[type='checkbox'] {
+  width: 16px;
+  margin-top: 0;
+}
+.chart-title {
+  font-size: 20px;
+  line-height: 1.35;
+  font-weight: 600;
+  text-align: center;
+  overflow-wrap: anywhere;
+  color: #172033;
+}
+.chart-legend {
+  font-size: 13px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  color: #526175;
+}
 .mapping {
   margin: 8px 0 18px;
   padding: 12px;

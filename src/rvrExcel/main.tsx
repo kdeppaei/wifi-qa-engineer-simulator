@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { matchedComparison, parseMatrix } from './data';
 import type { Point, MatrixOptions } from './data';
 import { makeWorkbook } from './workbook';
+import { defaultChartOptions } from './presentation';
+import type { ChartOptions, CurveStyle } from './presentation';
 import './style.css';
 
 type Mode = 'single' | 'common' | 'separate';
@@ -18,7 +20,11 @@ const defaultMetadata = () =>
       },
     ]),
   ) as Record<Mode, { source: string; note: string; xLabel: string; yLabel: string }>;
-const colors = ['#2563eb', '#dc2626'];
+const defaultPresentation = () => ({
+  single: defaultChartOptions(false),
+  common: defaultChartOptions(true),
+  separate: defaultChartOptions(true),
+});
 function Mapping({
   value,
   onChange,
@@ -34,63 +40,294 @@ function Mapping({
   xName: string;
   yName: string;
 }) {
+  const horizontal = value.orientation === 'rows';
+  const boundInput = (
+    key: 'startRow' | 'endRow' | 'startColumn' | 'endColumn',
+    caption: string,
+  ) => (
+    <label>
+      {caption}
+      <input
+        aria-label={`${prefix}${caption}`}
+        type="number"
+        min="1"
+        value={value[key] ?? ''}
+        placeholder="自動"
+        onChange={(e) =>
+          onChange({ ...value, [key]: e.target.value === '' ? undefined : Number(e.target.value) })
+        }
+      />
+    </label>
+  );
   return (
-    <details className="mapping">
+    <details className="mapping" open>
       <summary>修改擷取範圍（預設找左上方第一組數據）</summary>
+      <label className="mapping-orientation">
+        資料排列方式
+        <select
+          aria-label={`${prefix}資料排列方式`}
+          value={horizontal ? 'rows' : 'columns'}
+          onChange={(e) =>
+            onChange({ ...value, orientation: e.target.value as 'rows' | 'columns' })
+          }
+        >
+          <option value="columns">按欄讀取：每一行是一個測點</option>
+          <option value="rows">按列讀取：每一欄是一個測點</option>
+        </select>
+      </label>
       <div className="mapping-grid">
-        <label>
-          資料起始行
-          <input
-            aria-label={`${prefix}起始行`}
-            type="number"
-            min="1"
-            value={value.startRow ?? ''}
-            placeholder="自動"
-            onChange={(e) =>
-              onChange({
-                ...value,
-                startRow: e.target.value === '' ? undefined : Number(e.target.value),
-              })
-            }
-          />
-        </label>
+        {horizontal ? (
+          <>
+            {boundInput('startColumn', '資料起始欄')}
+            {boundInput('endColumn', '資料結束欄')}
+          </>
+        ) : (
+          <>
+            {boundInput('startRow', '資料起始行')}
+            {boundInput('endRow', '資料結束行')}
+          </>
+        )}
         {Array.from({ length: count }, (_, i) => (
           <label key={i}>
             {i === 0
-              ? `X 欄（${xName}）`
+              ? `X ${horizontal ? '行' : '欄'}（${xName}）`
               : count === 3
-                ? `${i === 1 ? 'ON' : 'OFF'} Y 欄`
-                : `Y 欄（${yName}）`}
+                ? `${i === 1 ? 'ON' : 'OFF'} Y ${horizontal ? '行' : '欄'}`
+                : `Y ${horizontal ? '行' : '欄'}（${yName}）`}
             <input
-              aria-label={`${prefix}第 ${i + 1} 欄位置`}
+              aria-label={`${prefix}第 ${i + 1} ${horizontal ? '行' : '欄'}位置`}
               type="number"
               min="1"
-              max="256"
-              value={value.columns?.[i] ?? ''}
-              placeholder={i === 0 ? '自動最左欄' : `自動第 ${i + 1} 欄`}
+              max={horizontal ? undefined : 256}
+              value={(horizontal ? value.rows : value.columns)?.[i] ?? ''}
+              placeholder={i === 0 ? '自動尋找 X' : `自動 X + ${i}`}
               onChange={(e) => {
-                const columns = [...(value.columns ?? [])];
-                columns[i] = e.target.value === '' ? undefined : Number(e.target.value);
-                onChange({ ...value, columns });
+                const key = horizontal ? 'rows' : 'columns';
+                const positions = [...(value[key] ?? [])];
+                positions[i] = e.target.value === '' ? undefined : Number(e.target.value);
+                onChange({ ...value, [key]: positions });
               }}
             />
           </label>
         ))}
       </div>
+      <p className="hint">
+        行與欄從 1 開始計算，包含貼上的標題。留空使用自動選取；結束位置包含在資料範圍內。
+      </p>
       <button className="secondary" onClick={() => onChange({})}>
         恢復自動擷取
       </button>
     </details>
   );
 }
+function Appearance({
+  value,
+  onChange,
+}: {
+  value: ChartOptions;
+  onChange: (v: ChartOptions) => void;
+}) {
+  const editCurve = (index: number, patch: Partial<CurveStyle>) =>
+    onChange({
+      ...value,
+      curves: value.curves.map((curve, i) => (i === index ? { ...curve, ...patch } : curve)),
+    });
+  return (
+    <details className="appearance" open>
+      <summary>圖表標題與曲線外觀</summary>
+      <label htmlFor="chart-title">
+        圖表標題
+        <input
+          id="chart-title"
+          maxLength={120}
+          value={value.title}
+          onChange={(e) => onChange({ ...value, title: e.target.value })}
+        />
+      </label>
+      <p className="hint">同步預覽、Excel 的 A2 與圖表大標題。測試條件另存於來源說明。</p>
+      <div className="row palette-buttons">
+        <button
+          className="secondary"
+          onClick={() =>
+            onChange({
+              ...value,
+              curves: value.curves.map((c, i) => ({
+                ...c,
+                color: i ? '#e69f00' : '#0072b2',
+                lineStyle: i ? 'dash' : 'solid',
+                marker: i ? 'square' : 'circle',
+              })),
+            })
+          }
+        >
+          藍橙＋不同線型
+        </button>
+        <button
+          className="secondary"
+          onClick={() =>
+            onChange({
+              ...value,
+              curves: value.curves.map((c, i) => ({
+                ...c,
+                color: i ? '#777777' : '#222222',
+                lineStyle: i ? 'dash' : 'solid',
+                marker: i ? 'diamond' : 'circle',
+              })),
+            })
+          }
+        >
+          黑白列印
+        </button>
+      </div>
+      <details className="curve-settings">
+        <summary>曲線顏色、線型與測點（展開設定）</summary>
+        <div className="curves">
+          {value.curves.map((curve, i) => (
+            <fieldset key={i} className="curve-style">
+              <legend>曲線 {i + 1}</legend>
+              <label>
+                圖例名稱
+                <input
+                  aria-label={`曲線 ${i + 1} 名稱`}
+                  maxLength={60}
+                  value={curve.name}
+                  onChange={(e) => editCurve(i, { name: e.target.value })}
+                />
+              </label>
+              <div className="mapping-grid">
+                <label>
+                  顏色
+                  <input
+                    aria-label={`曲線 ${i + 1} 顏色`}
+                    type="color"
+                    value={curve.color}
+                    onChange={(e) => editCurve(i, { color: e.target.value })}
+                  />
+                </label>
+                <label>
+                  線型
+                  <select
+                    aria-label={`曲線 ${i + 1} 線型`}
+                    value={curve.lineStyle}
+                    onChange={(e) =>
+                      editCurve(i, { lineStyle: e.target.value as CurveStyle['lineStyle'] })
+                    }
+                  >
+                    <option value="solid">實線</option>
+                    <option value="dash">虛線</option>
+                    <option value="dot">點線</option>
+                    <option value="none">不連線</option>
+                  </select>
+                </label>
+                <label>
+                  線寬（pt）
+                  <select
+                    aria-label={`曲線 ${i + 1} 線寬`}
+                    value={curve.lineWidth}
+                    onChange={(e) => editCurve(i, { lineWidth: Number(e.target.value) })}
+                  >
+                    {[1, 1.5, 2, 2.5, 3, 4].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  測點樣式
+                  <select
+                    aria-label={`曲線 ${i + 1} 測點樣式`}
+                    value={curve.marker}
+                    onChange={(e) =>
+                      editCurve(i, { marker: e.target.value as CurveStyle['marker'] })
+                    }
+                  >
+                    <option value="circle">圓形</option>
+                    <option value="square">方形</option>
+                    <option value="diamond">菱形</option>
+                    <option value="triangle">三角形</option>
+                    <option value="none">隱藏測點</option>
+                  </select>
+                </label>
+                <label>
+                  測點大小
+                  <select
+                    aria-label={`曲線 ${i + 1} 測點大小`}
+                    value={curve.markerSize}
+                    onChange={(e) => editCurve(i, { markerSize: Number(e.target.value) })}
+                  >
+                    {[3, 5, 7, 9, 12].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </fieldset>
+          ))}
+        </div>
+      </details>
+      <div className="row">
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={value.showLegend}
+            onChange={(e) => onChange({ ...value, showLegend: e.target.checked })}
+          />
+          顯示圖例
+        </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={value.showGrid}
+            onChange={(e) => onChange({ ...value, showGrid: e.target.checked })}
+          />
+          顯示圖表格線
+        </label>
+      </div>
+      {value.curves.some((c) => c.lineStyle === 'none' && c.marker === 'none') && (
+        <p role="alert" className="error">
+          不連線時請保留測點樣式，曲線才可見。
+        </p>
+      )}
+    </details>
+  );
+}
+function Marker({
+  curve,
+  x,
+  y,
+  children,
+}: {
+  curve: CurveStyle;
+  x: number;
+  y: number;
+  children?: React.ReactNode;
+}) {
+  const r = curve.markerSize * 0.65;
+  return (
+    <g fill={curve.color} data-marker={curve.marker}>
+      {curve.marker === 'circle' && <circle cx={x} cy={y} r={r} />}
+      {curve.marker === 'square' && <rect x={x - r} y={y - r} width={2 * r} height={2 * r} />}
+      {curve.marker === 'diamond' && (
+        <path d={`M${x},${y - r}L${x + r},${y}L${x},${y + r}L${x - r},${y}Z`} />
+      )}
+      {curve.marker === 'triangle' && (
+        <path d={`M${x},${y - r}L${x + r},${y + r}L${x - r},${y + r}Z`} />
+      )}
+      {children}
+    </g>
+  );
+}
 function Chart({
   series,
-  labels,
+  options,
   xLabel,
   yLabel,
 }: {
   series: Point[][];
-  labels: string[];
+  options: ChartOptions;
   xLabel: string;
   yLabel: string;
 }) {
@@ -98,29 +335,53 @@ function Chart({
   const maxX = Math.max(10, ...all.map((p) => p.db));
   const maxY = Math.max(10, ...all.map((p) => p.mbps ?? 0)) * 1.1;
   const x = (v: number) => 78 + (v / maxX) * 626;
-  const y = (v: number) => 352 - (v / maxY) * 294;
+  const y = (v: number) => 410 - (v / maxY) * 290;
+  const dash = (curve: CurveStyle) =>
+    curve.lineStyle === 'dash' ? '9 5' : curve.lineStyle === 'dot' ? '2 4' : undefined;
   const fmt = (n: number) => Number(n.toFixed(2)).toLocaleString('en-US');
   return (
-    <svg viewBox="0 0 760 430" role="img" aria-label={`RvR 曲線：X 軸 ${xLabel}，Y 軸 ${yLabel}`}>
+    <svg viewBox="0 0 760 500" role="img" aria-label={`RvR 曲線：X 軸 ${xLabel}，Y 軸 ${yLabel}`}>
+      <foreignObject x="78" y="8" width="626" height="66">
+        <div className="chart-title">{options.title}</div>
+      </foreignObject>
       {[0, 1, 2, 3, 4, 5].map((i) => (
         <g key={i}>
-          <line x1="78" x2="704" y1={y((maxY * i) / 5)} y2={y((maxY * i) / 5)} stroke="#e1e7ef" />
+          {options.showGrid && (
+            <>
+              <line
+                x1="78"
+                x2="704"
+                y1={y((maxY * i) / 5)}
+                y2={y((maxY * i) / 5)}
+                stroke="#e1e7ef"
+              />
+              <line
+                x1={x((maxX * i) / 5)}
+                x2={x((maxX * i) / 5)}
+                y1="120"
+                y2="410"
+                stroke="#e1e7ef"
+              />
+            </>
+          )}
           <text x="68" y={y((maxY * i) / 5) + 4} textAnchor="end">
             {fmt((maxY * i) / 5)}
           </text>
-          <text x={x((maxX * i) / 5)} y="378" textAnchor="middle">
+          <text x={x((maxX * i) / 5)} y="437" textAnchor="middle">
             {fmt((maxX * i) / 5)}
           </text>
         </g>
       ))}
-      <line x1="78" y1="352" x2="704" y2="352" stroke="#8a98ac" />
-      <text x="385" y="413" textAnchor="middle">
+      <line x1="78" y1="410" x2="704" y2="410" stroke="#8a98ac" />
+      <line x1="78" y1="120" x2="78" y2="410" stroke="#8a98ac" />
+      <text x="385" y="478" textAnchor="middle">
         {xLabel}
       </text>
-      <text transform="translate(20 215) rotate(-90)" textAnchor="middle">
+      <text transform="translate(20 265) rotate(-90)" textAnchor="middle">
         {yLabel}
       </text>
       {series.map((points, s) => {
+        const curve = options.curves[s];
         let pen = false;
         const path = points
           .map((p) => {
@@ -134,35 +395,51 @@ function Chart({
           })
           .join(' ');
         return (
-          <g key={s}>
-            <path d={path} fill="none" stroke={colors[s]} strokeWidth="2.5" />
-            {points.map((p, i) =>
-              p.mbps === null ? null : (
-                <circle key={i} cx={x(p.db)} cy={y(p.mbps)} r="3.3" fill={colors[s]}>
-                  <title>
-                    {labels[s]}: {p.db} {xLabel} / {p.mbps} {yLabel}
-                  </title>
-                </circle>
-              ),
+          <g key={s} data-curve={s + 1}>
+            {curve.lineStyle !== 'none' && (
+              <path
+                d={path}
+                fill="none"
+                stroke={curve.color}
+                strokeWidth={curve.lineWidth * 1.33}
+                strokeDasharray={dash(curve)}
+              />
             )}
+            {curve.marker !== 'none' &&
+              points.map((p, i) =>
+                p.mbps === null ? null : (
+                  <Marker key={i} curve={curve} x={x(p.db)} y={y(p.mbps)}>
+                    <title>
+                      {curve.name}: {p.db} {xLabel} / {p.mbps} {yLabel}
+                    </title>
+                  </Marker>
+                ),
+              )}
           </g>
         );
       })}
-      {labels.map((label, i) => (
-        <g key={label}>
-          <line
-            x1={220 + i * 170}
-            x2={246 + i * 170}
-            y1="25"
-            y2="25"
-            stroke={colors[i]}
-            strokeWidth="3"
-          />
-          <text x={254 + i * 170} y="30">
-            {label}
-          </text>
-        </g>
-      ))}
+      {options.showLegend &&
+        options.curves.map((curve, i) => (
+          <g key={i}>
+            {curve.lineStyle !== 'none' && (
+              <line
+                x1={90 + i * 320}
+                x2={122 + i * 320}
+                y1="94"
+                y2="94"
+                stroke={curve.color}
+                strokeWidth={curve.lineWidth * 1.33}
+                strokeDasharray={dash(curve)}
+              />
+            )}
+            <Marker curve={curve} x={106 + i * 320} y={94} />
+            <foreignObject x={132 + i * 320} y="80" width="260" height="32">
+              <div className="chart-legend" title={curve.name}>
+                {curve.name}
+              </div>
+            </foreignObject>
+          </g>
+        ))}
     </svg>
   );
 }
@@ -174,6 +451,11 @@ function App() {
   const [off, setOff] = useState('');
   const [sort, setSort] = useState(true);
   const [metadata, setMetadata] = useState(defaultMetadata);
+  const [presentation, setPresentation] = useState<Record<Mode, ChartOptions>>(defaultPresentation);
+  const options = presentation[mode];
+  const appearanceValid =
+    options.title.trim() &&
+    options.curves.every((c) => c.name.trim() && !(c.lineStyle === 'none' && c.marker === 'none'));
   const { source, note, xLabel, yLabel } = metadata[mode];
   const [mapping, setMapping] = useState<Record<string, MatrixOptions>>({
     single: {},
@@ -209,7 +491,7 @@ function App() {
       return { status: 'error' as const, error: (error as Error).message };
     }
   }, [text, off, mode, sort, mapping, mappingKey]);
-  const labels = mode === 'single' ? [yLabel] : ['TxBF ON', 'TxBF OFF'];
+  const labels = options.curves.map((curve) => curve.name);
   const comparison =
     result.status === 'ready' && mode !== 'single'
       ? matchedComparison(result.series[0], result.series[1])
@@ -241,7 +523,7 @@ function App() {
   function download() {
     if (result.status !== 'ready') return;
     try {
-      const bytes = makeWorkbook(result.series, source, note, { xLabel, yLabel });
+      const bytes = makeWorkbook(result.series, source, note, { xLabel, yLabel }, options);
       const url = URL.createObjectURL(
         new Blob([new Uint8Array(bytes).buffer], {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -252,7 +534,9 @@ function App() {
       link.download = `rvr-${mode === 'single' ? 'single' : 'txbf-on-off'}.xlsx`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 30000);
-      setMessage('Excel 已匯出。開啟後可繼續修改黃色儲存格，圖表直接參照這些數據。');
+      setMessage(
+        'Excel 已匯出。可修改 A2 更新圖表標題、修改第 6 行更新圖例名稱；黃色儲存格直接驅動原生 XY 圖表。',
+      );
     } catch (error) {
       setMessage(`匯出失敗：${(error as Error).message}`);
     }
@@ -279,7 +563,7 @@ function App() {
           <h1>RvR Excel 繪圖工具</h1>
           <p>直接貼上 MSP 數值矩陣，預設擷取左上方 dB／Throughput，再下載 Excel。</p>
         </div>
-        <span className="offline">離線使用 · v1.1</span>
+        <span className="offline">離線使用 · v1.2</span>
       </header>
       <nav aria-label="資料格式">
         {(
@@ -375,6 +659,7 @@ function App() {
                 setOn('');
                 setOff('');
                 setMetadata(defaultMetadata());
+                setPresentation(defaultPresentation());
                 setMapping({ single: {}, common: {}, on: {}, off: {} });
                 setFileError('');
                 setMessage('');
@@ -394,8 +679,8 @@ function App() {
             }}
           />
           <label className="check">
-            <input type="checkbox" checked={sort} onChange={(e) => setSort(e.target.checked)} />按
-            dB 排序（整組數據一起排序）
+            <input type="checkbox" checked={sort} onChange={(e) => setSort(e.target.checked)} />按 X
+            排序（整組數據一起排序）
           </label>
           <div className="metadata">
             <div className="mapping-grid">
@@ -419,12 +704,21 @@ function App() {
                   id="y-label"
                   maxLength={60}
                   value={yLabel}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    if (mode === 'single' && options.curves[0].name === yLabel)
+                      setPresentation((previous) => ({
+                        ...previous,
+                        single: {
+                          ...previous.single,
+                          curves: [{ ...previous.single.curves[0], name }],
+                        },
+                      }));
                     setMetadata((previous) => ({
                       ...previous,
-                      [mode]: { ...previous[mode], yLabel: e.target.value },
-                    }))
-                  }
+                      [mode]: { ...previous[mode], yLabel: name },
+                    }));
+                  }}
                 />
               </label>
             </div>
@@ -456,12 +750,17 @@ function App() {
             </p>
           )}
           <p className="hint">
-            支援 Tab、逗號、分號或空白分隔。每條曲線最多 1,000 點。空白不補 0，重複 dB
-            會提示處理。矩陣只擷取第一組連續數據；可修改起始行與欄位。圖片 OCR 尚未加入。
+            支援 Tab、逗號、分號或空白分隔。每條曲線最多 1,000 點。空白不補 0，重複 X
+            會提示處理。自動模式擷取第一組連續數據，也可指定 X／Y 行或欄與完整起訖範圍。圖片 OCR
+            尚未加入。
           </p>
         </section>
         <section className="preview">
           <h2>2. 檢查曲線並下載 Excel</h2>
+          <Appearance
+            value={options}
+            onChange={(value) => setPresentation((previous) => ({ ...previous, [mode]: value }))}
+          />
           {result.status === 'ready' ? (
             <>
               <p className="status">
@@ -471,23 +770,23 @@ function App() {
                   )
                   .join(' · ')}
                 {result.missing ? ` · ${result.missing} 個空白值（曲線斷開）` : ''}
-                {result.reordered ? ' · 已依 dB 排序' : ''}
+                {result.reordered ? ' · 已依 X 排序' : ''}
               </p>
               {result.selections.map((selection, i) => (
                 <p className="selection-info" key={i}>
-                  {mode === 'separate' ? `${i === 0 ? 'ON' : 'OFF'}：` : ''}從第{' '}
-                  {selection.startRow} 行擷取，第 {selection.columns.join('、')} 欄。
+                  {mode === 'separate' ? `${i === 0 ? 'ON' : 'OFF'}：` : ''}
+                  {selection.orientation === 'rows'
+                    ? `按列擷取：X／Y 使用第 ${selection.selectedRows.join('、')} 行，第 ${selection.startColumn}–${selection.endColumn} 欄。`
+                    : `從第 ${selection.startRow} 行擷取，第 ${selection.columns.join('、')} 欄，到第 ${selection.endRow} 行。`}
                   {selection.ignoredColumns > 0
                     ? `右側／未選取 ${selection.ignoredColumns} 欄不納入曲線。`
                     : ''}
-                  {selection.remainingRows > 0
-                    ? `下方 ${selection.remainingRows} 行未匯入（只取第一組數據）。`
-                    : ''}
+                  {selection.remainingRows > 0 ? `另有 ${selection.remainingRows} 行未匯入。` : ''}
                 </p>
               ))}
               <Chart
                 series={result.series}
-                labels={labels}
+                options={options}
                 xLabel={xLabel || 'dB'}
                 yLabel={yLabel || 'Throughput (Mbps)'}
               />
@@ -527,16 +826,28 @@ function App() {
           )}
           <button
             className="download"
-            disabled={result.status !== 'ready' || !xLabel.trim() || !yLabel.trim()}
+            disabled={
+              result.status !== 'ready' || !xLabel.trim() || !yLabel.trim() || !appearanceValid
+            }
             onClick={download}
           >
             下載 Excel 原生圖表 .xlsx
           </button>
           <p className="hint">
             Excel 的 Single 工作表用 A／B 欄；TxBF 工作表用 A／B（ON）與 D／E（OFF）。從第 7
-            行開始，修改資料後圖表會更新。換一輪測試前先清除舊測點。
-            新版取消凍結窗格並顯示格線，圖表不再跨過凍結分界。
+            行開始，修改資料後圖表會更新。換一輪測試前先清除舊測點。 改 A2 更新圖表標題，改 B6／E6
+            更新圖例。右鍵曲線可「設定數列格式」；右鍵圖表可「選取資料」。 點選曲線後，Excel
+            公式列可查看 SERIES 資料來源。圖表與工作表均未設保護。
           </p>
+          <details className="excel-help">
+            <summary>Excel 無法編輯時的檢查方式</summary>
+            <p className="hint">
+              若 Excel 顯示「受保護的檢視」，確認檔案是自己的匯出後按「啟用編輯」。若顯示 Office
+              授權過期或未啟用，需處理 Office
+              授權，網站無法解除此限制。一般模式下點一下圖表，再點曲線可調整格式；圖表標題亦可直接編輯。修改後另存
+              .xlsx。
+            </p>
+          </details>
           {message && (
             <p role="status" className="message">
               {message}

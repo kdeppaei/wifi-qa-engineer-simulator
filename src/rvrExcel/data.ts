@@ -9,12 +9,22 @@ export interface Parsed {
 }
 export const MAX_POINTS = 1000;
 export interface MatrixOptions {
+  orientation?: 'columns' | 'rows';
   startRow?: number;
+  endRow?: number;
   columns?: (number | undefined)[];
+  rows?: (number | undefined)[];
+  startColumn?: number;
+  endColumn?: number;
 }
 export interface MatrixParsed extends Parsed {
+  orientation: 'columns' | 'rows';
   startRow: number;
+  endRow?: number;
+  startColumn?: number;
+  endColumn?: number;
   columns: number[];
+  selectedRows: number[];
   ignoredColumns: number;
   skippedTopRows: number;
   remainingRows: number;
@@ -34,22 +44,35 @@ export function parseMatrix(
   const raw = text.replace(/^\uFEFF/, '').split(/\r?\n/);
   const rows = raw.map((line, index) => {
     try {
-      return line.trim() ? splitRow(line) : [];
+      return line.trim() || /[\t,;]/.test(line) ? splitRow(line) : [];
     } catch (error) {
       throw new Error(`第 ${index + 1} 行：${(error as Error).message}`, { cause: error });
     }
   });
+  if (options.orientation === 'rows') return parseMatrixRows(rows, raw, count, sort, options);
   if (
     options.startRow !== undefined &&
     (!Number.isInteger(options.startRow) || options.startRow < 1 || options.startRow > rows.length)
   )
     throw new Error('起始行必須是資料範圍內的正整數。');
+  if (
+    options.endRow !== undefined &&
+    (!Number.isInteger(options.endRow) || options.endRow < 1 || options.endRow > rows.length)
+  )
+    throw new Error('終止行必須是資料範圍內的正整數。');
+  if (
+    options.startRow !== undefined &&
+    options.endRow !== undefined &&
+    options.endRow < options.startRow
+  )
+    throw new Error('終止行不得小於起始行。');
   for (const n of options.columns ?? [])
     if (n !== undefined && (!Number.isInteger(n) || n < 1 || n > 256))
       throw new Error('欄位必須是 1 至 256 的正整數。');
   let start = options.startRow === undefined ? -1 : options.startRow - 1;
   let columns: number[] = [];
-  for (let r = start < 0 ? 0 : start; r < rows.length; r++) {
+  const stop = options.endRow ?? rows.length;
+  for (let r = start < 0 ? 0 : start; r < stop; r++) {
     const left = Math.max(
       0,
       rows[r].findIndex((c) => c !== ''),
@@ -72,13 +95,15 @@ export function parseMatrix(
     throw new Error('找不到左上方的數值區塊。請確認左欄 dB、右欄 Throughput，或指定起始行與欄位。');
   const selected: string[] = [];
   const seenDb = new Set<number>();
+  const selectedRows: number[] = [];
   let ignoredColumns = 0;
   let end = start;
-  for (let r = start; r < rows.length; r++) {
+  for (let r = start; r < stop; r++) {
     const cells = rows[r];
     const chosen = columns.map((c) => cells[c] ?? '');
-    if (chosen.every((c) => c === '')) break;
+    if (options.endRow === undefined && r > start && chosen.every((c) => c === '')) break;
     if (
+      options.endRow === undefined &&
       r > start &&
       (/^(average|mean|summary|total|end|平均|統計|合計|結束)(?:\s|$|:)/i.test(chosen[0]) ||
         chosen.every((c) => /^[^\d+-.]/.test(c) && !numeric(c)))
@@ -100,17 +125,125 @@ export function parseMatrix(
       );
     seenDb.add(db);
     selected.push(chosen.join('\t'));
+    selectedRows.push(r + 1);
     ignoredColumns = Math.max(ignoredColumns, cells.length - count);
     end = r + 1;
   }
   const parsed = parseData(selected.join('\n'), count, sort);
   return {
     ...parsed,
+    orientation: 'columns',
     startRow: start + 1,
+    endRow: end,
+    startColumn: Math.min(...columns) + 1,
+    endColumn: Math.max(...columns) + 1,
     columns: columns.map((c) => c + 1),
+    selectedRows,
     ignoredColumns,
     skippedTopRows: start,
     remainingRows: raw.slice(end).filter((line) => line.trim()).length,
+  };
+}
+
+function parseMatrixRows(
+  matrix: string[][],
+  raw: string[],
+  count: 2 | 3,
+  sort: boolean,
+  options: MatrixOptions,
+): MatrixParsed {
+  for (const n of options.rows ?? [])
+    if (n !== undefined && (!Number.isInteger(n) || n < 1 || n > matrix.length))
+      throw new Error('資料列必須是資料範圍內的正整數。');
+  const width = matrix.reduce((max, row) => Math.max(max, row.length), 0);
+  for (const [label, n] of [
+    ['起始欄', options.startColumn],
+    ['終止欄', options.endColumn],
+  ] as const)
+    if (n !== undefined && (!Number.isInteger(n) || n < 1 || n > width))
+      throw new Error(`${label}必須是資料範圍內的正整數。`);
+  if (
+    options.startColumn !== undefined &&
+    options.endColumn !== undefined &&
+    options.endColumn < options.startColumn
+  )
+    throw new Error('終止欄不得小於起始欄。');
+
+  let selectedRows: number[] = [];
+  let start = -1;
+  const explicitX = options.rows?.[0];
+  const stop = options.endColumn ?? width;
+  for (let r = explicitX === undefined ? 0 : explicitX - 1; r < matrix.length; r++) {
+    const candidate = Array.from({ length: count }, (_, i) =>
+      options.rows?.[i] === undefined ? r + i : options.rows[i]! - 1,
+    );
+    if (new Set(candidate).size !== count) {
+      if (explicitX !== undefined) throw new Error('每個資料列必須選擇不同列。');
+      continue;
+    }
+    if (candidate.some((row) => row >= matrix.length)) {
+      if (explicitX !== undefined)
+        throw new Error(`第 ${Math.max(...candidate) + 1} 行不存在，請指定有效的 X／Y 資料列。`);
+      continue;
+    }
+    const first =
+      options.startColumn === undefined
+        ? matrix[r].findIndex((cell, column) => column < stop && numeric(cell))
+        : options.startColumn - 1;
+    if (first >= 0 && (explicitX !== undefined || numeric(matrix[r][first] ?? ''))) {
+      selectedRows = candidate;
+      start = first;
+      break;
+    }
+    if (explicitX !== undefined) break;
+  }
+  if (start < 0 || !selectedRows.length)
+    throw new Error('找不到橫向數值區塊。請指定 X／Y 資料列與起始欄。');
+
+  const selected: string[] = [];
+  const columns: number[] = [];
+  const seenDb = new Set<number>();
+  let end = start;
+  for (let c = start; c < stop; c++) {
+    const chosen = selectedRows.map((row) => matrix[row][c] ?? '');
+    if (
+      options.endColumn === undefined &&
+      c > start &&
+      (chosen.every((cell) => cell === '') ||
+        /^(average|mean|summary|total|end|平均|統計|合計|結束)(?:\s|$|:)/i.test(chosen[0]) ||
+        chosen.every((cell) => /^[^\d+-.]/.test(cell) && !numeric(cell)))
+    )
+      break;
+    for (let i = 0; i < count; i++) {
+      const row = selectedRows[i];
+      if (c >= matrix[row].length)
+        throw new Error(`第 ${row + 1} 行、第 ${c + 1} 欄不存在。空白測值請保留 Tab 或逗號。`);
+      if (!(i > 0 && chosen[i] === '') && !numeric(chosen[i]))
+        throw new Error(`第 ${row + 1} 行、第 ${c + 1} 欄：必須是非負數字。`);
+    }
+    const db = Number(chosen[0]);
+    if (seenDb.has(db))
+      throw new Error(
+        `第 ${selectedRows[0] + 1} 行、第 ${c + 1} 欄：${db} dB 重複。請選擇同一輪測試或先處理重測值。`,
+      );
+    seenDb.add(db);
+    selected.push(chosen.join('\t'));
+    columns.push(c + 1);
+    end = c + 1;
+  }
+  const parsed = parseData(selected.join('\n'), count, sort);
+  return {
+    ...parsed,
+    orientation: 'rows',
+    startRow: selectedRows[0] + 1,
+    endRow: Math.max(...selectedRows) + 1,
+    startColumn: start + 1,
+    endColumn: end,
+    selectedRows: selectedRows.map((row) => row + 1),
+    columns,
+    ignoredColumns: Math.max(...selectedRows.map((row) => matrix[row].length)) - columns.length,
+    skippedTopRows: Math.min(...selectedRows),
+    remainingRows: raw.slice(Math.max(...selectedRows) + 1).filter((line) => line.trim()).length,
   };
 }
 
